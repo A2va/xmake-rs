@@ -1,0 +1,15 @@
+[package]
+name = "xmake"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+keywords = ["build-dependencies"]
+repository = "https://github.com/A2va/xmake-rs"
+homepage = "https://github.com/A2va/xmake-rs"
+description = """
+A build dependency for running `xmake` to build a native library
+"""
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
