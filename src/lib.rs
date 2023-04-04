@@ -40,7 +40,8 @@
 //! ```
 
 use std::collections::HashMap;
-use std::env;
+use std::hash::Hash;
+use std::{env, vec};
 use std::ffi::{OsStr, OsString};
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
@@ -56,4 +57,20 @@ pub struct Config {
     out_dir: Option<PathBuf>,
     env: Vec<(OsString, OsString)>,
     env_cache: HashMap<String, Option<OsString>>
+}
+
+impl Config {
+    /// Creates a new blank set of configuration to build the project specified
+    /// at the path `path`.
+    pub fn new<P: AsRef<Path>>(path: P) -> Config {
+        Config {
+            path: env::current_dir().unwrap().join(path),
+            target: None,
+            verbose: false,
+            defines: Vec::new(),
+            out_dir: None,
+            env: Vec::new(),
+            env_cache: HashMap::new()
+        }
+    }
 }
