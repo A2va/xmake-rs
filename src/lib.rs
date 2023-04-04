@@ -73,4 +73,29 @@ impl Config {
             env_cache: HashMap::new()
         }
     }
+    fn xmake_executable(&mut self) -> OsString {
+        self.getenv_os("XMAKE").unwrap_or_else(|| OsString::from("xmake"))
+    }
+
+    fn getenv_os(&mut self, v: &str) -> Option<OsString> {
+        if let Some(val) = self.env_cache.get(v) {
+            return val.clone();
+        }
+        let r = env::var_os(v);
+        println!("{} = {:?}", v, r);
+        self.env_cache.insert(v.to_string(), r.clone());
+        r
+    }
+
+}
+
+fn getenv_unwrap(v: &str) -> String {
+    match env::var(v) {
+        Ok(s) => s,
+        Err(..) => fail(&format!("environment variable `{}` not defined", v)),
+    }
+}
+
+fn fail(s: &str) -> ! {
+    panic!("\n{}\n\nbuild script failed, must exit now", s)
 }
