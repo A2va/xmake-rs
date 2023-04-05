@@ -73,6 +73,33 @@ impl Config {
             env_cache: HashMap::new()
         }
     }
+
+    /// Sets the xmake target for this compilation.
+    pub fn target(&mut self, target: &str) -> &mut Config {
+        self.target = Some(target.to_string());
+        self
+    }
+
+    /// Sets the output directory for this compilation.
+    ///
+    /// This is automatically scraped from `$OUT_DIR` which is set for Cargo
+    /// build scripts so it's not necessary to call this from a build script.
+    pub fn out_dir<P: AsRef<Path>>(&mut self, out: P) -> &mut Config {
+        self.out_dir = Some(out.as_ref().to_path_buf());
+        self
+    }
+
+    /// Configure an environment variable for the `xmake` processes spawned by
+    /// this crate in the `build` step.
+    pub fn env<K, V>(&mut self, key: K, value: V) -> &mut Config
+    where
+        K: AsRef<OsStr>,
+        V: AsRef<OsStr>,
+    {
+        self.env
+            .push((key.as_ref().to_owned(), value.as_ref().to_owned()));
+        self
+    }
     fn xmake_executable(&mut self) -> OsString {
         self.getenv_os("XMAKE").unwrap_or_else(|| OsString::from("xmake"))
     }
