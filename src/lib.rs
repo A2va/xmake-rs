@@ -52,6 +52,7 @@ pub struct Config {
     verbose: bool,
     out_dir: Option<PathBuf>,
     env: Vec<(OsString, OsString)>,
+    static_crt: Option<bool>,
     env_cache: HashMap<String, Option<OsString>>
 }
 
@@ -85,7 +86,8 @@ impl Config {
             verbose: false,
             out_dir: None,
             env: Vec::new(),
-            env_cache: HashMap::new()
+            env_cache: HashMap::new(),
+            static_crt: None,
         }
     }
 
@@ -113,6 +115,14 @@ impl Config {
     {
         self.env
             .push((key.as_ref().to_owned(), value.as_ref().to_owned()));
+        self
+    }
+
+    /// Configures runtime type (static or not)
+    ///
+    /// This option defaults to `false`.
+    pub fn static_crt(&mut self, static_crt: bool) -> &mut Config {
+        self.static_crt = Some(static_crt);
         self
     }
 
@@ -156,6 +166,13 @@ impl Config {
         .unwrap_or_else(|| PathBuf::from(getenv_unwrap("OUT_DIR")));
 
         cmd.arg("-o").arg(dst.join("build"));
+
+        if let Some(static_crt) = self.static_crt {
+            match static_crt {
+                true => cmd.arg("--vs_runtime=MT"),
+                false => cmd.arg("--vs_runtime=MD"),
+            };
+        }
 
         if self.verbose {
             cmd.arg("-v");
