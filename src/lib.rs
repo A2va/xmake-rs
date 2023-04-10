@@ -97,6 +97,12 @@ impl Config {
         self
     }
 
+    /// Sets verbose output.
+    pub fn verbose(&mut self, value: bool) -> &mut Config {
+        self.verbose = value;
+        self
+    }
+
     /// Sets the output directory for this compilation.
     ///
     /// This is automatically scraped from `$OUT_DIR` which is set for Cargo
