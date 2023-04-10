@@ -53,6 +53,7 @@ pub struct Config {
     target: Option<String>,
     verbose: bool,
     out_dir: Option<PathBuf>,
+    mode: Option<String>,
     options: Vec<(OsString, OsString)>,
     env: Vec<(OsString, OsString)>,
     static_crt: Option<bool>,
@@ -88,6 +89,7 @@ impl Config {
             target: None,
             verbose: false,
             out_dir: None,
+            mode: None,
             options: Vec::new(),
             env: Vec::new(),
             env_cache: HashMap::new(),
@@ -113,6 +115,12 @@ impl Config {
     /// build scripts so it's not necessary to call this from a build script.
     pub fn out_dir<P: AsRef<Path>>(&mut self, out: P) -> &mut Config {
         self.out_dir = Some(out.as_ref().to_path_buf());
+        self
+    }
+
+     /// Sets the xmake mode for this compilation.
+    pub fn mode(&mut self, mode: &str) -> &mut Config {
+        self.mode = Some(mode.to_string());
         self
     }
 
@@ -192,9 +200,12 @@ impl Config {
         if let Some(static_crt) = self.static_crt {
             match static_crt {
                 true => cmd.arg("--vs_runtime=MT"),
-                false => cmd.arg("--vs_runtime=MD"),
+                false => cmd.arg("--vs_runtime=MD")
             };
         }
+
+        let mode = self.get_mode();
+        cmd.arg("-m").arg(mode);
 
         for &(ref k, ref v) in self.env.iter().chain(&self.env) {
             let mut os = OsString::from("--");
@@ -231,6 +242,76 @@ impl Config {
 
         run(&mut cmd, "xmake");
         dst
+    }
+
+    /// Return xmake mode or inferred from Rust's compilation profile.
+    ///
+    /// * if `opt-level=0` then `debug`,
+    /// * if `opt-level={1,2,3}` and:
+    ///   * `debug=false` then `release`
+    ///   * otherwise `releasedbg`
+    /// * if `opt-level={s,z}` then `minsizerel`
+    fn get_mode(&self) -> &str {
+        if let Some(profile) = self.mode.as_ref() {
+            profile
+        } else {
+            #[derive(PartialEq)]
+            enum RustProfile {
+                Debug,
+                Release,
+            }
+            #[derive(PartialEq, Debug)]
+            enum OptLevel {
+                Debug,
+                Release,
+                Size,
+            }
+
+            let rust_profile = match &getenv_unwrap("PROFILE")[..] {
+                "debug" => RustProfile::Debug,
+                "release" | "bench" => RustProfile::Release,
+                unknown => {
+                    eprintln!(
+                        "Warning: unknown Rust profile={}; defaulting to a release build.",
+                        unknown
+                    );
+                    RustProfile::Release
+                }
+            };
+
+            let opt_level = match &getenv_unwrap("OPT_LEVEL")[..] {
+                "0" => OptLevel::Debug,
+                "1" | "2" | "3" => OptLevel::Release,
+                "s" | "z" => OptLevel::Size,
+                unknown => {
+                    let default_opt_level = match rust_profile {
+                        RustProfile::Debug => OptLevel::Debug,
+                        RustProfile::Release => OptLevel::Release,
+                    };
+                    eprintln!(
+                        "Warning: unknown opt-level={}; defaulting to a {:?} build.",
+                        unknown, default_opt_level
+                    );
+                    default_opt_level
+                }
+            };
+
+            let debug_info: bool = match &getenv_unwrap("DEBUG")[..] {
+                "false" => false,
+                "true" => true,
+                unknown => {
+                    eprintln!("Warning: unknown debug={}; defaulting to `true`.", unknown);
+                    true
+                }
+            };
+
+            match (opt_level, debug_info) {
+                (OptLevel::Debug, _) => "debug",
+                (OptLevel::Release, false) => "release",
+                (OptLevel::Release, true) => "releasedbg",
+                (OptLevel::Size, _) => "minsizerel",
+            }
+        }
     }
 
     fn xmake_command(&mut self) -> Command {
