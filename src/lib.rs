@@ -31,17 +31,19 @@
 //! ```no_run
 //! use xmake::Config;
 //!
-//! let dst = Config::new("libfoo").build();
+//! let dst = Config::new("libfoo")
+//!                 .option("bar", "true")
+//!                 .env("XMAKE", "path/to/xmake")
+//!                 .build();
 //! println!("cargo:rustc-link-search=native={}", dst.display());
 //! println!("cargo:rustc-link-lib=static=foo");
 //! ```
 #![deny(missing_docs)]
 
-
 use std::collections::HashMap;
+use std::env;
+use std::ffi::{OsStr, OsString};
 use std::io::ErrorKind;
-use std::{env};
-use std::ffi::{OsString, OsStr};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -51,9 +53,10 @@ pub struct Config {
     target: Option<String>,
     verbose: bool,
     out_dir: Option<PathBuf>,
+    options: Vec<(OsString, OsString)>,
     env: Vec<(OsString, OsString)>,
     static_crt: Option<bool>,
-    env_cache: HashMap<String, Option<OsString>>
+    env_cache: HashMap<String, Option<OsString>>,
 }
 
 /// Builds the native library rooted at `path` with the default xmake options.
@@ -85,6 +88,7 @@ impl Config {
             target: None,
             verbose: false,
             out_dir: None,
+            options: Vec::new(),
             env: Vec::new(),
             env_cache: HashMap::new(),
             static_crt: None,
@@ -109,6 +113,18 @@ impl Config {
     /// build scripts so it's not necessary to call this from a build script.
     pub fn out_dir<P: AsRef<Path>>(&mut self, out: P) -> &mut Config {
         self.out_dir = Some(out.as_ref().to_path_buf());
+        self
+    }
+
+    /// Configure an environment variable for the `xmake` processes spawned by
+    /// this crate in the `build` step.
+    pub fn option<K, V>(&mut self, key: K, value: V) -> &mut Config
+    where
+        K: AsRef<OsStr>,
+        V: AsRef<OsStr>,
+    {
+        self.options
+            .push((key.as_ref().to_owned(), value.as_ref().to_owned()));
         self
     }
 
@@ -139,13 +155,13 @@ impl Config {
     /// command to build the library.
     pub fn build(&mut self) -> PathBuf {
         self.config();
-        
+
         let mut cmd = self.xmake_command();
         cmd.arg("build");
         if self.target.is_some() {
             cmd.arg(self.target.clone().unwrap());
         }
-       
+
         cmd.arg("-F").arg(self.path.clone().join("xmake.lua"));
 
         // In case of xmake is waiting to download something
@@ -160,16 +176,16 @@ impl Config {
     }
 
     // Run the configuration with all the configured
-    /// options. 
+    /// options.
     fn config(&mut self) {
         let mut cmd = self.xmake_command();
         cmd.arg("config");
         cmd.arg("-F").arg(self.path.clone().join("xmake.lua"));
 
         let dst = self
-        .out_dir
-        .clone()
-        .unwrap_or_else(|| PathBuf::from(getenv_unwrap("OUT_DIR")));
+            .out_dir
+            .clone()
+            .unwrap_or_else(|| PathBuf::from(getenv_unwrap("OUT_DIR")));
 
         cmd.arg("-o").arg(dst.join("build"));
 
@@ -178,6 +194,14 @@ impl Config {
                 true => cmd.arg("--vs_runtime=MT"),
                 false => cmd.arg("--vs_runtime=MD"),
             };
+        }
+
+        for &(ref k, ref v) in self.env.iter().chain(&self.env) {
+            let mut os = OsString::from("--");
+            os.push(k);
+            os.push("=");
+            os.push(v);
+            cmd.arg(os);
         }
 
         if self.verbose {
@@ -196,9 +220,9 @@ impl Config {
         cmd.arg("-F").arg(self.path.clone().join("xmake.lua"));
 
         let dst = self
-        .out_dir
-        .clone()
-        .unwrap_or_else(|| PathBuf::from(getenv_unwrap("OUT_DIR")));
+            .out_dir
+            .clone()
+            .unwrap_or_else(|| PathBuf::from(getenv_unwrap("OUT_DIR")));
 
         cmd.arg("-o").arg(dst.clone());
         if self.verbose {
@@ -222,7 +246,8 @@ impl Config {
     }
 
     fn xmake_executable(&mut self) -> OsString {
-        self.getenv_os("XMAKE").unwrap_or_else(|| OsString::from("xmake"))
+        self.getenv_os("XMAKE")
+            .unwrap_or_else(|| OsString::from("xmake"))
     }
 
     fn getenv_os(&mut self, v: &str) -> Option<OsString> {
@@ -234,7 +259,6 @@ impl Config {
         self.env_cache.insert(v.to_string(), r.clone());
         r
     }
-
 }
 
 fn run(cmd: &mut Command, program: &str) {
