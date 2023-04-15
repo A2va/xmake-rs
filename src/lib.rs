@@ -98,6 +98,8 @@ impl Config {
     }
 
     /// Sets the xmake target for this compilation.
+    /// Note that is different from rust target (os and arch), an xmake target 
+    /// can be binary or a library.
     pub fn target(&mut self, target: &str) -> &mut Config {
         self.target = Some(target.to_string());
         self
@@ -118,7 +120,7 @@ impl Config {
         self
     }
 
-     /// Sets the xmake mode for this compilation.
+    /// Sets the xmake mode for this compilation.
     pub fn mode(&mut self, mode: &str) -> &mut Config {
         self.mode = Some(mode.to_string());
         self
@@ -180,7 +182,10 @@ impl Config {
         run(&mut cmd, "xmake");
 
         // XMake put libary in the lib folder
-        self.install().join("lib")
+        let dst = self.install().join("lib");
+        println!("cargo:root={}", dst.display());
+
+        dst
     }
 
     // Run the configuration with all the configured
@@ -200,19 +205,20 @@ impl Config {
         if let Some(static_crt) = self.static_crt {
             match static_crt {
                 true => cmd.arg("--vs_runtime=MT"),
-                false => cmd.arg("--vs_runtime=MD")
+                false => cmd.arg("--vs_runtime=MD"),
             };
         }
 
         let mode = self.get_mode();
         cmd.arg("-m").arg(mode);
 
-        for &(ref k, ref v) in self.env.iter().chain(&self.env) {
-            let mut os = OsString::from("--");
-            os.push(k);
-            os.push("=");
-            os.push(v);
-            cmd.arg(os);
+        for &(ref k, ref v) in self.options.iter().chain(&self.options) {
+            let option = format!(
+                "--{}={}",
+                k.clone().into_string().unwrap(),
+                v.clone().into_string().unwrap()
+            );
+            cmd.arg(option);
         }
 
         if self.verbose {
