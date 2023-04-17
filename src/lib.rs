@@ -92,13 +92,13 @@ impl Config {
             mode: None,
             options: Vec::new(),
             env: Vec::new(),
-            env_cache: HashMap::new(),
             static_crt: None,
+            env_cache: HashMap::new(),
         }
     }
 
     /// Sets the xmake target for this compilation.
-    /// Note that is different from rust target (os and arch), an xmake target 
+    /// Note that is different from rust target (os and arch), an xmake target
     /// can be binary or a library.
     pub fn target(&mut self, target: &str) -> &mut Config {
         self.target = Some(target.to_string());
@@ -202,6 +202,80 @@ impl Config {
 
         cmd.arg("-o").arg(dst.join("build"));
 
+        // Cross compilation
+        let host = getenv_unwrap("HOST");
+        let target = getenv_unwrap("TARGET");
+        if host != target {
+            // List of xmake platform https://github.com/xmake-io/xmake/tree/master/xmake/platforms
+            let os = getenv_unwrap("CARGO_CFG_TARGET_OS");
+            let plat = match self.get_xmake_plat(os.clone()) {
+                Some(p) => p,
+                None => panic!("unsupported rust target: {}", os),
+            };
+
+            let arch = match (
+                plat.as_str(),
+                getenv_unwrap("CARGO_CFG_TARGET_ARCH").as_str(),
+            ) {
+                ("android", a) if os == "androideabi" => match a {
+                    "arm" => "armeabi", // TODO Check with cc-rs if it's true
+                    "armv7" => "armeabi-v7a",
+                    a => a,
+                },
+                ("android", "aarch64") => "arm64-v8a",
+                ("android", "i686") => "x86",
+                ("appletvos", "aarch64") => "arm64",
+                ("watchos", "arm64_32") => "armv7k",
+                ("watchos", "armv7k") => "armv7k",
+                ("iphoneos", "aarch64") => "arm64",
+                ("macosx", "aarch64") => "arm64",
+                ("windows", "i686") => "x86",
+                ("wasm", _) => "wasm32",
+                (_, "aarch64") => "arm64",
+                (_, "i686") => "i386",
+                (_, a) => a,
+            }
+            .to_string();
+
+            cmd.arg(format!("--plat={}", plat));
+            if plat != "cross" {
+                //cmd.arg(format!("--arch={}", arch));
+            }
+
+            if plat == "android" {
+                cmd.arg(format!("--ndk={}", getenv_unwrap("ANDROID_NDK_HOME")));
+                cmd.arg(format!("--ndk_cxxstl=c++_shared")); // TODO Let user configure stl
+                cmd.arg(format!("--toolchain={}", "ndk"));
+            }
+
+            if plat == "wasm" {
+                cmd.arg(format!("--emsdk={}", getenv_unwrap("EMSCRIPTEN_HOME")));
+                cmd.arg(format!("--toolchain={}", "emcc"));
+            }
+
+            if plat == "cross" {
+                let mut c_cfg = cc::Build::new();
+                c_cfg
+                    .cargo_metadata(false)
+                    .opt_level(0)
+                    .debug(false)
+                    .warnings(false)
+                    .host(&host)
+                    .target(&target);
+
+                // Attempt to find the cross compilation sdk
+                // Let cc find it for us
+                // Usually a compiler is inside bin folder and xmake wait the entire
+                // sdk folder
+                let compiler = c_cfg.get_compiler();
+                let sdk = compiler.path().ancestors().nth(2).unwrap();
+
+                cmd.arg(format!("--sdk={}", sdk.display()));
+                cmd.arg(format!("--cross={}-{}", arch, os));
+                cmd.arg(format!("--toolchain={}", "cross"));
+            }
+        }
+
         if let Some(static_crt) = self.static_crt {
             match static_crt {
                 true => cmd.arg("--vs_runtime=MT"),
@@ -248,6 +322,23 @@ impl Config {
 
         run(&mut cmd, "xmake");
         dst
+    }
+
+    /// Convert rust platform to xmake in a cross compilation scenario.
+    fn get_xmake_plat(&self, platform: String) -> Option<String> {
+        // List of xmake platform https://github.com/xmake-io/xmake/tree/master/xmake/platforms
+        match platform.as_str() {
+            "android" => Some("android".to_string()),
+            "androideabi" => Some("android".to_string()),
+            "emscripten" => Some("wasm".to_string()),
+            "macos" => Some("macosx".to_string()),
+            "ios" => Some("iphoneos".to_string()),
+            "tvos" => Some("appletvos".to_string()),
+            "fuchsia" => None,
+            "solaris" => None,
+            _ if getenv_unwrap("CARGO_CFG_TARGET_ARCH") == "wasm32" => Some("wasm".to_string()),
+            _ => Some("cross".to_string()),
+        }
     }
 
     /// Return xmake mode or inferred from Rust's compilation profile.
