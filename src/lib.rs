@@ -195,6 +195,9 @@ impl Config {
         cmd.arg("config");
         cmd.arg("-F").arg(self.path.clone().join("xmake.lua"));
 
+        // In case of xmake is waiting to download something
+        cmd.arg("--yes");
+
         let dst = self
             .out_dir
             .clone()
