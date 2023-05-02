@@ -11,3 +11,5 @@ xmake = "0.1"
 
 The XMake executable is assumed to be `xmake` unless the `XMAKE`
 environmental variable is set.
+
+If you want to cross-compile, you must indicate the path of the NDK or emscripten via the environment variables `ANDROID_NDK_HOME` and `ANDROID_NDK_HOME`.
