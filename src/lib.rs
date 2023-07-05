@@ -193,7 +193,6 @@ impl Config {
     fn config(&mut self) {
         let mut cmd = self.xmake_command();
         cmd.arg("config");
-        cmd.arg("--file=").arg(self.path.clone().join("xmake.lua"));
 
         // In case of xmake is waiting to download something
         cmd.arg("--yes");
@@ -311,7 +310,6 @@ impl Config {
         if self.target.is_some() {
             cmd.arg(self.target.clone().unwrap());
         }
-        cmd.arg("--file=").arg(self.path.clone().join("xmake.lua"));
 
         let dst = self
             .out_dir
@@ -423,6 +421,8 @@ impl Config {
             cmd.env(k, v);
         }
 
+        // Set the project dir env for xmake
+        cmd.env("XMAKE_PROJECT_DIR", self.path.clone());
         cmd
     }
 
