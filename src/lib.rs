@@ -168,15 +168,17 @@ impl Config {
 
         let mut cmd = self.xmake_command();
         cmd.arg("build");
+
+         // In case of xmake is waiting to download something
+         cmd.arg("--yes");
+         if self.verbose {
+             cmd.arg("-v");
+         }
+
         if self.target.is_some() {
             cmd.arg(self.target.clone().unwrap());
         }
-        
-        // In case of xmake is waiting to download something
-        cmd.arg("--yes");
-        if self.verbose {
-            cmd.arg("-v");
-        }
+
         run(&mut cmd, "xmake");
 
         // XMake put libary in the lib folder
@@ -201,6 +203,10 @@ impl Config {
             .unwrap_or_else(|| PathBuf::from(getenv_unwrap("OUT_DIR")));
 
         cmd.arg("-o").arg(dst.join("build"));
+
+        if self.verbose {
+            cmd.arg("-v");
+        }
 
         // Cross compilation
         let host = getenv_unwrap("HOST");
@@ -295,9 +301,6 @@ impl Config {
             cmd.arg(option);
         }
 
-        if self.verbose {
-            cmd.arg("-v");
-        }
         run(&mut cmd, "xmake");
     }
 
@@ -305,18 +308,19 @@ impl Config {
     fn install(&mut self) -> PathBuf {
         let mut cmd = self.xmake_command();
         cmd.arg("install");
-        if self.target.is_some() {
-            cmd.arg(self.target.clone().unwrap());
-        }
 
         let dst = self
-            .out_dir
-            .clone()
-            .unwrap_or_else(|| PathBuf::from(getenv_unwrap("OUT_DIR")));
+        .out_dir
+        .clone()
+        .unwrap_or_else(|| PathBuf::from(getenv_unwrap("OUT_DIR")));
 
         cmd.arg("-o").arg(dst.clone());
         if self.verbose {
             cmd.arg("-v");
+        }
+
+        if self.target.is_some() {
+            cmd.arg(self.target.clone().unwrap());
         }
 
         run(&mut cmd, "xmake");
