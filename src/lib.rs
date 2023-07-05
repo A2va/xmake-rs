@@ -202,7 +202,7 @@ impl Config {
             .clone()
             .unwrap_or_else(|| PathBuf::from(getenv_unwrap("OUT_DIR")));
 
-        cmd.arg("-o").arg(dst.join("build"));
+        cmd.arg("--buildir=").arg(dst);
 
         if self.verbose {
             cmd.arg("-v");
