@@ -171,9 +171,7 @@ impl Config {
         if self.target.is_some() {
             cmd.arg(self.target.clone().unwrap());
         }
-
-        cmd.arg("--file=").arg(self.path.clone().join("xmake.lua"));
-
+        
         // In case of xmake is waiting to download something
         cmd.arg("--yes");
         if self.verbose {
