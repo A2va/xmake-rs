@@ -172,7 +172,7 @@ impl Config {
             cmd.arg(self.target.clone().unwrap());
         }
 
-        cmd.arg("-F").arg(self.path.clone().join("xmake.lua"));
+        cmd.arg("--file=").arg(self.path.clone().join("xmake.lua"));
 
         // In case of xmake is waiting to download something
         cmd.arg("--yes");
@@ -193,7 +193,7 @@ impl Config {
     fn config(&mut self) {
         let mut cmd = self.xmake_command();
         cmd.arg("config");
-        cmd.arg("-F").arg(self.path.clone().join("xmake.lua"));
+        cmd.arg("--file=").arg(self.path.clone().join("xmake.lua"));
 
         // In case of xmake is waiting to download something
         cmd.arg("--yes");
@@ -289,11 +289,11 @@ impl Config {
         let mode = self.get_mode();
         cmd.arg("-m").arg(mode);
 
-        for &(ref k, ref v) in self.options.iter().chain(&self.options) {
+        for (key, val) in self.options.iter() {
             let option = format!(
                 "--{}={}",
-                k.clone().into_string().unwrap(),
-                v.clone().into_string().unwrap()
+                key.clone().into_string().unwrap(),
+                val.clone().into_string().unwrap()
             );
             cmd.arg(option);
         }
@@ -311,7 +311,7 @@ impl Config {
         if self.target.is_some() {
             cmd.arg(self.target.clone().unwrap());
         }
-        cmd.arg("-F").arg(self.path.clone().join("xmake.lua"));
+        cmd.arg("--file=").arg(self.path.clone().join("xmake.lua"));
 
         let dst = self
             .out_dir
