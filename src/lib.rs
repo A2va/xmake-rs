@@ -304,10 +304,18 @@ impl Config {
         }
 
         if let Some(static_crt) = self.static_crt {
-            match static_crt {
-                true => cmd.arg("--vs_runtime=MT"),
-                false => cmd.arg("--vs_runtime=MD"),
+            let debug = match self.get_mode() {
+                "debug" => "d",
+                "releasedbg" => "d",
+                _ => "",
             };
+
+            let s = match static_crt {
+                true => format!("--vs_runtime=MT{}", debug),
+                false => format!("--vs_runtime=MD{}", debug),
+            };
+
+            cmd.arg(s);
         }
 
         let mode = self.get_mode();
