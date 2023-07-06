@@ -268,7 +268,9 @@ impl Config {
             }
 
             if plat == "android" {
-                cmd.arg(format!("--ndk={}", getenv_unwrap("ANDROID_NDK_HOME")));
+                if let Ok(ndk) = env::var("ANDROID_NDK_HOME") { 
+                    cmd.arg(format!("--ndk={}", ndk));
+                }
                 if self.cpp_link_stdlib.is_some() {
                     cmd.arg(format!("--ndk_cxxstl={}", self.cpp_link_stdlib.clone().unwrap())); 
                 }   
@@ -276,7 +278,9 @@ impl Config {
             }
 
             if plat == "wasm" {
-                cmd.arg(format!("--emsdk={}", getenv_unwrap("EMSCRIPTEN_HOME")));
+                if let Ok(emscripten) = env::var("EMSCRIPTEN_HOME") { 
+                    cmd.arg(format!("--emsdk={}", emscripten));
+                }
                 cmd.arg(format!("--toolchain={}", "emcc"));
             }
 
