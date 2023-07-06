@@ -1,11 +1,12 @@
 [package]
 name = "xmake"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 license = "MIT"
 keywords = ["build-dependencies"]
 repository = "https://github.com/A2va/xmake-rs"
 homepage = "https://github.com/A2va/xmake-rs"
+doc = ""
 description = """
 A build dependency for running `xmake` to build a native library
 """

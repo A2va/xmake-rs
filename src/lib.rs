@@ -57,6 +57,7 @@ pub struct Config {
     options: Vec<(OsString, OsString)>,
     env: Vec<(OsString, OsString)>,
     static_crt: Option<bool>,
+    cpp_link_stdlib: Option<String>,
     env_cache: HashMap<String, Option<OsString>>,
 }
 
@@ -93,6 +94,7 @@ impl Config {
             options: Vec::new(),
             env: Vec::new(),
             static_crt: None,
+            cpp_link_stdlib: Some("c++_shared".to_string()),
             env_cache: HashMap::new(),
         }
     }
@@ -158,6 +160,22 @@ impl Config {
         self
     }
 
+    /// Set the standard library to link against when compiling with C++
+    /// support (only Android).
+    /// The given library name must not contain the `lib` prefix.
+    /// 
+    /// 
+    /// Common values:
+    /// - `c++_static`
+    /// - `c++_shared`
+    /// - `gnustl_static`
+    /// - `gnustl_shared`
+    /// - `stlport_shared`
+    /// - `stlport_static`
+    pub fn cpp_link_stdlib(&mut self, stblib: &str) -> &mut Config {
+        self.cpp_link_stdlib = Some(stblib.to_string());
+        self
+    }
     /// Run this configuration, compiling the library with all the configured
     /// options.
     ///
@@ -247,7 +265,9 @@ impl Config {
 
             if plat == "android" {
                 cmd.arg(format!("--ndk={}", getenv_unwrap("ANDROID_NDK_HOME")));
-                cmd.arg(format!("--ndk_cxxstl=c++_shared")); // TODO Let user configure stl
+                if(self.cpp_link_stdlib.is_some()) {
+                    cmd.arg(format!("--ndk_cxxstl={}", self.cpp_link_stdlib.unwrap()));
+                }
                 cmd.arg(format!("--toolchain={}", "ndk"));
             }
 
