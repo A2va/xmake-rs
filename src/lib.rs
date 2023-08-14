@@ -128,7 +128,7 @@ impl Config {
         self
     }
 
-    /// Configure an environment variable for the `xmake` processes spawned by
+    /// Configure an option for the `xmake` processes spawned by
     /// this crate in the `build` step.
     pub fn option<K, V>(&mut self, key: K, value: V) -> &mut Config
     where
@@ -230,14 +230,15 @@ impl Config {
         // Cross compilation
         let host = getenv_unwrap("HOST");
         let target = getenv_unwrap("TARGET");
-        if host != target {
-            // List of xmake platform https://github.com/xmake-io/xmake/tree/master/xmake/platforms
-            let os = getenv_unwrap("CARGO_CFG_TARGET_OS");
-            let plat = match self.get_xmake_plat(os.clone()) {
-                Some(p) => p,
-                None => panic!("unsupported rust target: {}", os),
-            };
 
+        // List of xmake platform https://github.com/xmake-io/xmake/tree/master/xmake/platforms
+        let os = getenv_unwrap("CARGO_CFG_TARGET_OS");
+        let plat = match self.get_xmake_plat(os.clone()) {
+            Some(p) => p,
+            None => panic!("unsupported rust target: {}", os),
+        };
+
+        if host != target {
             let arch = match (
                 plat.as_str(),
                 getenv_unwrap("CARGO_CFG_TARGET_ARCH").as_str(),
@@ -305,6 +306,8 @@ impl Config {
                 cmd.arg(format!("--cross={}-{}", arch, os));
                 cmd.arg(format!("--toolchain={}", "cross"));
             }
+        } else {
+            cmd.arg(format!("--plat={}", plat)); 
         }
 
         if let Some(static_crt) = self.static_crt {
@@ -360,10 +363,11 @@ impl Config {
         dst
     }
 
-    /// Convert rust platform to xmake in a cross compilation scenario.
+    /// Convert rust platform to xmake one
     fn get_xmake_plat(&self, platform: String) -> Option<String> {
         // List of xmake platform https://github.com/xmake-io/xmake/tree/master/xmake/platforms
         match platform.as_str() {
+            "windows" => Some("windows".to_string()),
             "android" => Some("android".to_string()),
             "androideabi" => Some("android".to_string()),
             "emscripten" => Some("wasm".to_string()),
@@ -372,7 +376,7 @@ impl Config {
             "tvos" => Some("appletvos".to_string()),
             "fuchsia" => None,
             "solaris" => None,
-            _ if getenv_unwrap("CARGO_CFG_TARGET_ARCH") == "wasm32" => Some("wasm".to_string()),
+            _ if getenv_unwrap("CARGO_CFG_TARGET_FAMILY") == "wasm" => Some("wasm".to_string()),
             _ => Some("cross".to_string()),
         }
     }
