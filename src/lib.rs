@@ -43,7 +43,7 @@
 use std::collections::HashMap;
 use std::env;
 use std::ffi::{OsStr, OsString};
-use std::io::ErrorKind;
+use std::io::{ErrorKind, BufRead};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -199,6 +199,9 @@ impl Config {
         }
 
         run(&mut cmd, "xmake");
+
+
+
 
         // XMake put libary in the lib folder
         let dst = self.install().join("lib");
@@ -363,6 +366,45 @@ impl Config {
         dst
     }
 
+    fn resolve_links(& mut self) {
+        let mut cmd = self.xmake_command();
+        if let Some(target) = &self.target {
+            cmd.env("TARGET", target);
+        }
+
+        cmd.arg("lua");
+        cmd.arg("link.lua");
+
+        if let Some(link_infos) = run(&mut cmd, "xmake") {
+            let linkdirs = "linkd";
+            let links = "links";
+            let syslinks = "syslk";
+
+            for l in link_infos.lines() {
+                let cargo_cmd = if link_infos.starts_with(linkdirs) {
+                    "cargo:rustc-link-search=native"
+                } else if link_infos.starts_with(links) ||link_infos.starts_with(syslinks) {
+                    "cargo:rustc-link-lib"
+                } else {
+                    fail("Bad links");
+                    ""
+                };
+                
+                let links = l.split_at(5).1; // Remove the first five chars
+                for link in links.split("|") {
+                    println!("{}={}", cargo_cmd, link);
+                }
+            }
+            
+          
+
+            return;
+        } 
+
+        eprintln!("Impossible to retrieve the links of the project");
+    }
+
+
     /// Convert rust platform to xmake one
     fn get_xmake_plat(&self, platform: String) -> Option<String> {
         // List of xmake platform https://github.com/xmake-io/xmake/tree/master/xmake/platforms
@@ -481,24 +523,28 @@ impl Config {
     }
 }
 
-fn run(cmd: &mut Command, program: &str) {
+
+fn run(cmd: &mut Command, program: &str) -> Option<String> {
     println!("running: {:?}", cmd);
-    let status = match cmd.status() {
-        Ok(status) => status,
+    let output = match  cmd.output() {
+        Ok(out) => out,
         Err(ref e) if e.kind() == ErrorKind::NotFound => {
             fail(&format!(
                 "failed to execute command: {}\nis `{}` not installed?",
                 e, program
             ));
-        }
+        },
         Err(e) => fail(&format!("failed to execute command: {}", e)),
-    };
-    if !status.success() {
+    }; 
+
+    if !output.status.success() {
         fail(&format!(
             "command did not execute successfully, got: {}",
-            status
+            output.status
         ));
     }
+
+    return String::from_utf8(output.stdout).ok();
 }
 
 fn getenv_unwrap(v: &str) -> String {
