@@ -1,5 +1,6 @@
 
 import("core.project.project")
+import("core.base.task")
 
 function _get_values_from_target(target, name)
     local values = table.wrap(target:get(name))
@@ -21,7 +22,11 @@ function _print_output(targets, name, output)
 end
 
 function main(argv)
-     
+    -- Enter project directory
+    local oldir = os.cd(os.projectdir())
+    -- Run the configure task to get the lastest links
+    task.run("config")
+
     local targets = project.targets()
     if os.getenv("TARGET") then
         targets = {project.target(os.getenv("TARGET"))}
@@ -30,10 +35,7 @@ function main(argv)
     _print_output(targets, "linkdirs", "linkd")
     _print_output(targets, "links", "links")
     _print_output(targets, "syslinks", "syslk")
+
+    -- Leave project directory
+    os.cd(oldir)
 end
-
--- local t = project.target("test")
-
--- print("linkdirs: " .. table.concat(_get_values_from_target(t, "linkdirs"),"|"))
--- print("links: " .. table.concat(_get_values_from_target(t, "links"),"|"))
--- print("syslinks: " .. table.concat(_get_values_from_target(t, "syslinks"),"|"))
