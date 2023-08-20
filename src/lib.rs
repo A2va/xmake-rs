@@ -43,7 +43,7 @@
 use std::collections::HashMap;
 use std::env;
 use std::ffi::{OsStr, OsString};
-use std::io::{ErrorKind, BufRead};
+use std::io::{ErrorKind};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -380,23 +380,11 @@ impl Config {
             let links = "links";
             let syslinks = "syslk";
 
-            for l in link_infos.lines() {
-                let cargo_cmd = if link_infos.starts_with(linkdirs) {
-                    "cargo:rustc-link-search=native"
-                } else if link_infos.starts_with(links) ||link_infos.starts_with(syslinks) {
-                    "cargo:rustc-link-lib"
-                } else {
-                    fail("Bad links");
-                    ""
-                };
-                
-                let links = l.split_at(5).1; // Remove the first five chars
-                for link in links.split("|") {
-                    println!("{}={}", cargo_cmd, link);
-                }
-            }
-            
-          
+            let map = parse_links(link_infos);
+            // Link all the dependancies
+            self.add_links(&map[linkdirs], "cargo:rustc-link-search=native");
+            self.add_links(&map[links], "cargo:rustc-link-lib");
+            self.add_links(&map[syslinks], "cargo:rustc-link-lib");
 
             return;
         } 
@@ -404,6 +392,11 @@ impl Config {
         eprintln!("Impossible to retrieve the links of the project");
     }
 
+    fn add_links(&self, vec: &Vec<String>, cmd: &str) {
+        for v in vec {
+            println!("{}={}", cmd, v);
+        }
+    }
 
     /// Convert rust platform to xmake one
     fn get_xmake_plat(&self, platform: String) -> Option<String> {
@@ -524,6 +517,25 @@ impl Config {
 }
 
 
+/// Parse the links that were given by xmake in this format
+/// linkd:path/to/libA|path/to/libB -> Link search directory
+/// links:linkA|linkB -> Library to link
+/// syslk:sysA|sysB -> System library to link
+fn parse_links(s: String) -> HashMap<String, Vec<String>> {
+    let str: String = s.trim().to_string();
+
+    let mut map = HashMap::new();
+
+    for l in str.lines() {
+        // Split between identifier linkd, syslk and theirs respective values
+        let (links, values)= l.split_at(5);
+        let v: Vec<_> = values.replace(":", "").split('|').map(|x| x.to_string()).collect();
+       
+        map.insert(links.to_string(), v);
+    }
+    map
+}
+
 fn run(cmd: &mut Command, program: &str) -> Option<String> {
     println!("running: {:?}", cmd);
     let output = match  cmd.output() {
@@ -556,4 +568,37 @@ fn getenv_unwrap(v: &str) -> String {
 
 fn fail(s: &str) -> ! {
     panic!("\n{}\n\nbuild script failed, must exit now", s)
+}
+
+
+#[cfg(test)]
+mod tests {
+    use crate::parse_links;
+
+    #[test]
+    fn parse() {
+        let str = "linkd:path/to/libA|path/to/libB|path\\to\\libC\n\
+        links:linkA|linkB\n\
+        syslk:sysA|sysB";
+
+        let map = parse_links(str.to_string());
+        
+        println!("{:?}", map);
+
+    
+        assert!(!map.is_empty());
+
+        assert!(map.contains_key("linkd"));
+        assert!(map.contains_key("links"));
+        assert!(map.contains_key("syslk"));
+
+        let linkd: Vec<String> = ["path/to/libA", "path/to/libB", "path\\to\\libC"].iter().map(|&s| s.into()).collect();
+        let links: Vec<String> = ["linkA", "linkB"].iter().map(|&s| s.into()).collect();
+        let syslk: Vec<String> = ["sysA", "sysB"].iter().map(|&s| s.into()).collect();
+
+        assert_eq!(map["linkd"], linkd); 
+        assert_eq!(map["links"], links); 
+        assert_eq!(map["syslk"], syslk); 
+    }
+
 }
