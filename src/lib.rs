@@ -43,7 +43,7 @@
 use std::collections::HashMap;
 use std::env;
 use std::ffi::{OsStr, OsString};
-use std::io::{ErrorKind};
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -58,6 +58,7 @@ pub struct Config {
     env: Vec<(OsString, OsString)>,
     static_crt: Option<bool>,
     cpp_link_stdlib: Option<String>,
+    link_resolution: bool,
     env_cache: HashMap<String, Option<OsString>>,
 }
 
@@ -95,6 +96,7 @@ impl Config {
             env: Vec::new(),
             static_crt: None,
             cpp_link_stdlib: None,
+            link_resolution: true,
             env_cache: HashMap::new(),
         }
     }
@@ -177,6 +179,14 @@ impl Config {
         self
     }
 
+    /// Configures runtime type (static or not)
+    ///
+    /// This option defaults to `true`.
+    pub fn link_resolution(&mut self, link: bool) -> &mut Config {
+        self.link_resolution = link;
+        self
+    }
+
     /// Run this configuration, compiling the library with all the configured
     /// options.
     ///
@@ -198,10 +208,12 @@ impl Config {
             cmd.arg(self.target.clone().unwrap());
         }
 
+        // Build library
         run(&mut cmd, "xmake");
 
-
-
+        if self.link_resolution {
+            self.resolve_links();
+        }
 
         // XMake put libary in the lib folder
         let dst = self.install().join("lib");
@@ -372,8 +384,17 @@ impl Config {
             cmd.env("TARGET", target);
         }
 
+        macro_rules! p {
+            ($($tokens: tt)*) => {
+                println!("cargo:warning={}", format!($($tokens)*))
+            }
+        }
+
+        let pt = Path::new(file!()).parent().unwrap();
+        p!("xmake-rs, defined in file: {}", pt.display());
+
         cmd.arg("lua");
-        cmd.arg("link.lua");
+        cmd.arg(format!("{}",pt.join("link.lua").display()));
 
         if let Some(link_infos) = run(&mut cmd, "xmake") {
             let linkdirs = "linkd";
@@ -382,10 +403,18 @@ impl Config {
 
             let map = parse_links(link_infos);
             // Link all the dependancies
-            self.add_links(&map[linkdirs], "cargo:rustc-link-search=native");
-            self.add_links(&map[links], "cargo:rustc-link-lib");
-            self.add_links(&map[syslinks], "cargo:rustc-link-lib");
-
+            if !map.is_empty() {
+                if map.contains_key(linkdirs) {
+                    self.add_links(&map[linkdirs], "cargo:rustc-link-search=native");
+                }
+                if map.contains_key(links) {
+                    self.add_links(&map[links], "cargo:rustc-link-lib");
+                }
+                if map.contains_key(syslinks) {
+                    self.add_links(&map[syslinks], "cargo:rustc-link-lib");
+                }
+            }
+           
             return;
         } 
 
@@ -524,14 +553,15 @@ impl Config {
 fn parse_links(s: String) -> HashMap<String, Vec<String>> {
     let str: String = s.trim().to_string();
 
-    let mut map = HashMap::new();
+    let mut map: HashMap<String, Vec<String>> = HashMap::new();
 
     for l in str.lines() {
         // Split between identifier linkd, syslk and theirs respective values
         let (links, values)= l.split_at(5);
         let v: Vec<_> = values.replace(":", "").split('|').map(|x| x.to_string()).collect();
-       
-        map.insert(links.to_string(), v);
+        if v[0] != "" {
+            map.insert(links.to_string(), v);
+        }
     }
     map
 }
@@ -599,6 +629,24 @@ mod tests {
         assert_eq!(map["linkd"], linkd); 
         assert_eq!(map["links"], links); 
         assert_eq!(map["syslk"], syslk); 
+    }
+
+    #[test]
+    fn empty() {
+        let str = "linkd:\n\
+        links:\n\
+        syslk:";
+
+        let map = parse_links(str.to_string());
+        
+        println!("{:?}", map);
+
+
+        assert!(map.is_empty());
+
+        assert!(!map.contains_key("linkd"));
+        assert!(!map.contains_key("links"));
+        assert!(!map.contains_key("syslk"));
     }
 
 }
