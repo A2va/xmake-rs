@@ -327,11 +327,13 @@ impl Config {
 
         // TODO Handle static crt for other compiler than MSVC
         let static_crt = self.static_crt.unwrap_or_else(||self.get_static_crt());
-        let debug = match self.get_mode() {
-            "debug" => "d",
-            "releasedbg" => "d",
-            _ => "",
-        };
+        // Useless since Rust will always link to the release runtime static or not
+        // let debug = match self.get_mode() {
+        //     "debug" => "d",
+        //     "releasedbg" => "d",
+        //     _ => "",
+        // };
+        let debug = "";
         let s = match static_crt {
             true => format!("--vs_runtime=MT{}", debug),
             false => format!("--vs_runtime=MD{}", debug),
