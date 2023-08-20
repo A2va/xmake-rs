@@ -179,7 +179,7 @@ impl Config {
         self
     }
 
-    /// Configures runtime type (static or not)
+    /// Configures if should be resolved with xmake.
     ///
     /// This option defaults to `true`.
     pub fn link_resolution(&mut self, link: bool) -> &mut Config {
@@ -325,20 +325,20 @@ impl Config {
             cmd.arg(format!("--plat={}", plat)); 
         }
 
-        if let Some(static_crt) = self.static_crt {
-            let debug = match self.get_mode() {
-                "debug" => "d",
-                "releasedbg" => "d",
-                _ => "",
-            };
+        // TODO Handle static crt for other compiler than MSVC
+        let static_crt = self.static_crt.unwrap_or_else(||self.get_static_crt());
+        let debug = match self.get_mode() {
+            "debug" => "d",
+            "releasedbg" => "d",
+            _ => "",
+        };
+        let s = match static_crt {
+            true => format!("--vs_runtime=MT{}", debug),
+            false => format!("--vs_runtime=MD{}", debug),
+        };
 
-            let s = match static_crt {
-                true => format!("--vs_runtime=MT{}", debug),
-                false => format!("--vs_runtime=MD{}", debug),
-            };
-
-            cmd.arg(s);
-        }
+        cmd.arg(s);
+    
 
         let mode = self.get_mode();
         cmd.arg("-m").arg(mode);
@@ -378,7 +378,7 @@ impl Config {
         dst
     }
 
-    fn resolve_links(& mut self) {
+    fn resolve_links(&mut self) {
         let mut cmd = self.xmake_command();
         if let Some(target) = &self.target {
             cmd.env("TARGET", target);
@@ -424,6 +424,15 @@ impl Config {
     fn add_links(&self, vec: &Vec<String>, cmd: &str) {
         for v in vec {
             println!("{}={}", cmd, v);
+        }
+    }
+
+    fn get_static_crt(&self) -> bool {
+        let linkage = env::var("CARGO_CFG_TARGET_FEATURE").unwrap_or(String::new());
+        if linkage.contains("crt-static") {
+            true
+        } else {
+            false
         }
     }
 
