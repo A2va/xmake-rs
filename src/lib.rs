@@ -563,6 +563,7 @@ fn parse_links(s: String) -> HashMap<String, Vec<String>> {
             map.insert(links.to_string(), v);
         }
     }
+    println!("{:?}", map);
     map
 }
 
