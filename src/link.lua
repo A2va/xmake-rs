@@ -18,6 +18,15 @@ function _print_output(targets, name, output)
         end
     end
 
+    if name == "linkdirs" then
+        for i, v in ipairs(values) do 
+            -- If a path is relative it's certainly relative to project directory
+            if not path.is_absolute(v) then
+                values[i] = path.join(project.directory(), v)
+            end
+        end
+    end
+
     print(format("%s:", output) .. table.concat(table.unique(values), "|"))
 end
 

@@ -558,12 +558,11 @@ fn parse_links(s: String) -> HashMap<String, Vec<String>> {
     for l in str.lines() {
         // Split between identifier linkd, syslk and theirs respective values
         let (links, values)= l.split_at(5);
-        let v: Vec<_> = values.replace(":", "").split('|').map(|x| x.to_string()).collect();
+        let v: Vec<_> = values.replacen(":", "",1).split('|').map(|x| x.to_string()).collect();
         if v[0] != "" {
             map.insert(links.to_string(), v);
         }
     }
-    println!("{:?}", map);
     map
 }
 
