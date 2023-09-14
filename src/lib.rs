@@ -310,24 +310,27 @@ impl Config {
             cmd.arg(format!("--plat={}", plat)); 
         }
 
-        if let Some(static_crt) = self.static_crt {
-            let debug = match self.get_mode() {
-                "debug" => "d",
-                "releasedbg" => "d",
-                _ => "",
-            };
+        // Static CRT
+        let static_crt = self.static_crt.unwrap_or_else(|| self.get_static_crt());
+        let debug = match self.get_mode() {
+            // rusct doesn't support debug version of the CRT
+            // "debug" => "d", 
+            // "releasedbg" => "d",
+            _ => "",
+        };
 
-            let s = match static_crt {
-                true => format!("--vs_runtime=MT{}", debug),
-                false => format!("--vs_runtime=MD{}", debug),
-            };
-
-            cmd.arg(s);
-        }
-
+        let runtime = match static_crt {
+            true => format!("--vs_runtime=MT{}", debug),
+            false => format!("--vs_runtime=MD{}", debug),
+        };
+        
+        cmd.arg(runtime);
+        
+        // Compilation mode: release, debug...
         let mode = self.get_mode();
         cmd.arg("-m").arg(mode);
 
+        // Option
         for (key, val) in self.options.iter() {
             let option = format!(
                 "--{}={}",
@@ -361,6 +364,15 @@ impl Config {
 
         run(&mut cmd, "xmake");
         dst
+    }
+
+    fn get_static_crt(&self) -> bool {
+        let feature = env::var("CARGO_CFG_TARGET_FEATURE").unwrap_or(String::new());
+        if feature.contains("crt-static") {
+            true
+        } else {
+            false
+        }
     }
 
     /// Convert rust platform to xmake one
