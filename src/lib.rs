@@ -58,6 +58,7 @@ pub struct Config {
     env: Vec<(OsString, OsString)>,
     static_crt: Option<bool>,
     cpp_link_stdlib: Option<String>,
+    link_resolution: bool,
     env_cache: HashMap<String, Option<OsString>>,
 }
 
@@ -95,6 +96,7 @@ impl Config {
             env: Vec::new(),
             static_crt: None,
             cpp_link_stdlib: None,
+            link_resolution: true,
             env_cache: HashMap::new(),
         }
     }
@@ -163,8 +165,8 @@ impl Config {
     /// Set the standard library to link against when compiling with C++
     /// support (only Android).
     /// The given library name must not contain the `lib` prefix.
-    /// 
-    /// 
+    ///
+    ///
     /// Common values:
     /// - `c++_static`
     /// - `c++_shared`
@@ -174,6 +176,14 @@ impl Config {
     /// - `stlport_static`
     pub fn cpp_link_stdlib(&mut self, stblib: &str) -> &mut Config {
         self.cpp_link_stdlib = Some(stblib.to_string());
+        self
+    }
+
+    /// Configures if links should be resolved with xmake.
+    ///
+    /// This option defaults to `true`.
+    pub fn link_resolution(&mut self, link: bool) -> &mut Config {
+        self.link_resolution = link;
         self
     }
 
@@ -188,11 +198,11 @@ impl Config {
         let mut cmd = self.xmake_command();
         cmd.arg("build");
 
-         // In case of xmake is waiting to download something
-         cmd.arg("--yes");
-         if self.verbose {
-             cmd.arg("-v");
-         }
+        // In case of xmake is waiting to download something
+        cmd.arg("--yes");
+        if self.verbose {
+            cmd.arg("-v");
+        }
 
         if self.target.is_some() {
             cmd.arg(self.target.clone().unwrap());
@@ -269,17 +279,20 @@ impl Config {
             }
 
             if plat == "android" {
-                if let Ok(ndk) = env::var("ANDROID_NDK_HOME") { 
+                if let Ok(ndk) = env::var("ANDROID_NDK_HOME") {
                     cmd.arg(format!("--ndk={}", ndk));
                 }
                 if self.cpp_link_stdlib.is_some() {
-                    cmd.arg(format!("--ndk_cxxstl={}", self.cpp_link_stdlib.clone().unwrap())); 
-                }   
+                    cmd.arg(format!(
+                        "--ndk_cxxstl={}",
+                        self.cpp_link_stdlib.clone().unwrap()
+                    ));
+                }
                 cmd.arg(format!("--toolchain={}", "ndk"));
             }
 
             if plat == "wasm" {
-                if let Ok(emscripten) = env::var("EMSCRIPTEN_HOME") { 
+                if let Ok(emscripten) = env::var("EMSCRIPTEN_HOME") {
                     cmd.arg(format!("--emsdk={}", emscripten));
                 }
                 cmd.arg(format!("--toolchain={}", "emcc"));
@@ -307,14 +320,14 @@ impl Config {
                 cmd.arg(format!("--toolchain={}", "cross"));
             }
         } else {
-            cmd.arg(format!("--plat={}", plat)); 
+            cmd.arg(format!("--plat={}", plat));
         }
 
         // Static CRT
         let static_crt = self.static_crt.unwrap_or_else(|| self.get_static_crt());
         let debug = match self.get_mode() {
             // rusct doesn't support debug version of the CRT
-            // "debug" => "d", 
+            // "debug" => "d",
             // "releasedbg" => "d",
             _ => "",
         };
@@ -323,9 +336,9 @@ impl Config {
             true => format!("--vs_runtime=MT{}", debug),
             false => format!("--vs_runtime=MD{}", debug),
         };
-        
+
         cmd.arg(runtime);
-        
+
         // Compilation mode: release, debug...
         let mode = self.get_mode();
         cmd.arg("-m").arg(mode);
@@ -349,9 +362,9 @@ impl Config {
         cmd.arg("install");
 
         let dst = self
-        .out_dir
-        .clone()
-        .unwrap_or_else(|| PathBuf::from(getenv_unwrap("OUT_DIR")));
+            .out_dir
+            .clone()
+            .unwrap_or_else(|| PathBuf::from(getenv_unwrap("OUT_DIR")));
 
         cmd.arg("-o").arg(dst.clone());
         if self.verbose {
@@ -493,24 +506,52 @@ impl Config {
     }
 }
 
-fn run(cmd: &mut Command, program: &str) {
+const LINKS_DIRECTORY: &str = "linkdirs";
+const LINKS: &str =  "links";
+const SYSTEM_LINKS: &str = "syslinks";
+const FRAMEWORKS: &str = "frameworks";
+
+/// Parse the links that were given by xmake in this format
+/// linkdirs:path/to/libA|path/to/libB -> Link search directory
+/// links:linkA|linkB -> Library to link
+/// syslinks:sysA|sysB -> System library to link
+/// frameworks:frmA|frmB -> Framework to link
+fn parse_links(s: String) -> HashMap<String, Vec<String>> {
+    let str: String = s.trim().to_string();
+    let mut map: HashMap<String, Vec<String>> = HashMap::new();
+
+    for l in str.lines() {
+        // Split between identifier linkd, syslk and theirs respective values
+        let (links, values) = l.split_once(":").unwrap();
+        let v: Vec<_> = values
+            .split('|')
+            .map(|x| x.to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        map.insert(links.to_string(), v);
+    }
+    map
+}
+
+fn run(cmd: &mut Command, program: &str) -> Option<String> {
     println!("running: {:?}", cmd);
-    let status = match cmd.status() {
-        Ok(status) => status,
+    let output = match  cmd.output() {
+        Ok(out) => out,
         Err(ref e) if e.kind() == ErrorKind::NotFound => {
             fail(&format!(
                 "failed to execute command: {}\nis `{}` not installed?",
                 e, program
             ));
-        }
+        },
         Err(e) => fail(&format!("failed to execute command: {}", e)),
     };
-    if !status.success() {
+    if !output.status.success() {
         fail(&format!(
             "command did not execute successfully, got: {}",
-            status
+            output.status
         ));
     }
+    return String::from_utf8(output.stdout).ok();
 }
 
 fn getenv_unwrap(v: &str) -> String {
@@ -522,4 +563,61 @@ fn getenv_unwrap(v: &str) -> String {
 
 fn fail(s: &str) -> ! {
     panic!("\n{}\n\nbuild script failed, must exit now", s)
+}
+#[cfg(test)]
+mod tests {
+    use crate::{parse_links, LINKS_DIRECTORY, LINKS, SYSTEM_LINKS, FRAMEWORKS};
+
+    #[test]
+    fn parse() {
+        let mut s = String::new();
+        s.push_str("linkdirs:path/to/libA|path/to/libB|path\\to\\libC\n");
+        s.push_str("links:linkA|linkB\n");
+        s.push_str("syslinks:sysA|sysB\n");
+        s.push_str("frameworks:frameA|frameB\n");
+        
+        let map = parse_links(s);
+
+        assert!(!map.is_empty());
+
+        assert!(map.contains_key(LINKS_DIRECTORY));
+        assert!(map.contains_key(LINKS));
+        assert!(map.contains_key(SYSTEM_LINKS));
+        assert!(map.contains_key(FRAMEWORKS));
+
+        let link_directory: Vec<String> = ["path/to/libA", "path/to/libB", "path\\to\\libC"].iter().map(|&s| s.into()).collect();
+        let links: Vec<String> = ["linkA", "linkB"].iter().map(|&s| s.into()).collect();
+        let system_links: Vec<String> = ["sysA", "sysB"].iter().map(|&s| s.into()).collect();
+        let frameworks: Vec<String> = ["frameA", "frameB"].iter().map(|&s| s.into()).collect();
+
+        assert_eq!(map[LINKS_DIRECTORY], link_directory);
+        assert_eq!(map[LINKS], links);
+        assert_eq!(map[SYSTEM_LINKS], system_links);
+        assert_eq!(map[FRAMEWORKS], frameworks);
+
+    }
+
+    #[test]
+    fn empty() {
+        let mut s = String::new();
+        s.push_str("linkdirs:\n");
+        s.push_str("links:\n");
+        s.push_str("syslinks:\n");
+        s.push_str("frameworks:\n");
+
+        let map = parse_links(s.to_string());
+
+        assert!(!map.is_empty());
+
+        assert!(map.contains_key(LINKS_DIRECTORY));
+        assert!(map.contains_key(LINKS));
+        assert!(map.contains_key(SYSTEM_LINKS));
+        assert!(map.contains_key(FRAMEWORKS));
+
+        assert!(map[LINKS_DIRECTORY].is_empty());
+        assert!(map[LINKS].is_empty());
+        assert!(map[SYSTEM_LINKS].is_empty());
+        assert!(map[FRAMEWORKS].is_empty());
+
+    }
 }
