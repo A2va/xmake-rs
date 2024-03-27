@@ -380,6 +380,7 @@ impl Config {
         // List of xmake platform https://github.com/xmake-io/xmake/tree/master/xmake/platforms
         match platform.as_str() {
             "windows" => Some("windows".to_string()),
+            "linux" => Some("linux".to_string()),
             "android" => Some("android".to_string()),
             "androideabi" => Some("android".to_string()),
             "emscripten" => Some("wasm".to_string()),
