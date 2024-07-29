@@ -42,7 +42,6 @@
 
 use std::collections::HashMap;
 use std::env;
-use std::ffi::{OsStr, OsString};
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -54,11 +53,11 @@ pub struct Config {
     verbose: bool,
     out_dir: Option<PathBuf>,
     mode: Option<String>,
-    options: Vec<(OsString, OsString)>,
-    env: Vec<(OsString, OsString)>,
+    options: Vec<(String, String)>,
+    env: Vec<(String, String)>,
     static_crt: Option<bool>,
     cpp_link_stdlib: Option<String>,
-    env_cache: HashMap<String, Option<OsString>>,
+    env_cache: HashMap<String, Option<String>>,
 }
 
 /// Builds the native library rooted at `path` with the default xmake options.
@@ -132,8 +131,8 @@ impl Config {
     /// this crate in the `build` step.
     pub fn option<K, V>(&mut self, key: K, value: V) -> &mut Config
     where
-        K: AsRef<OsStr>,
-        V: AsRef<OsStr>,
+        K: AsRef<str>,
+        V: AsRef<str>,
     {
         self.options
             .push((key.as_ref().to_owned(), value.as_ref().to_owned()));
@@ -144,8 +143,8 @@ impl Config {
     /// this crate in the `build` step.
     pub fn env<K, V>(&mut self, key: K, value: V) -> &mut Config
     where
-        K: AsRef<OsStr>,
-        V: AsRef<OsStr>,
+        K: AsRef<str>,
+        V: AsRef<str>,
     {
         self.env
             .push((key.as_ref().to_owned(), value.as_ref().to_owned()));
@@ -337,11 +336,7 @@ impl Config {
 
         // Option
         for (key, val) in self.options.iter() {
-            let option = format!(
-                "--{}={}",
-                key.clone().into_string().unwrap(),
-                val.clone().into_string().unwrap()
-            );
+            let option = format!("--{}={}", key.clone(), val.clone(),);
             cmd.arg(option);
         }
 
@@ -483,16 +478,17 @@ impl Config {
         cmd
     }
 
-    fn xmake_executable(&mut self) -> OsString {
+    fn xmake_executable(&mut self) -> String {
         self.getenv_os("XMAKE")
-            .unwrap_or_else(|| OsString::from("xmake"))
+            .unwrap_or_else(|| String::from("xmake"))
     }
 
-    fn getenv_os(&mut self, v: &str) -> Option<OsString> {
+    fn getenv_os(&mut self, v: &str) -> Option<String> {
         if let Some(val) = self.env_cache.get(v) {
             return val.clone();
         }
-        let r = env::var_os(v);
+
+        let r = env::var(v).ok();
         println!("{} = {:?}", v, r);
         self.env_cache.insert(v.to_string(), r.clone());
         r
