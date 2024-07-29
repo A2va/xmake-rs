@@ -42,7 +42,6 @@
 
 use std::collections::HashMap;
 use std::env;
-use std::ffi::{OsStr, OsString};
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -54,11 +53,11 @@ pub struct Config {
     verbose: bool,
     out_dir: Option<PathBuf>,
     mode: Option<String>,
-    options: Vec<(OsString, OsString)>,
-    env: Vec<(OsString, OsString)>,
+    options: Vec<(String, String)>,
+    env: Vec<(String, String)>,
     static_crt: Option<bool>,
     cpp_link_stdlib: Option<String>,
-    env_cache: HashMap<String, Option<OsString>>,
+    env_cache: HashMap<String, Option<String>>,
 }
 
 /// Builds the native library rooted at `path` with the default xmake options.
@@ -132,8 +131,8 @@ impl Config {
     /// this crate in the `build` step.
     pub fn option<K, V>(&mut self, key: K, value: V) -> &mut Config
     where
-        K: AsRef<OsStr>,
-        V: AsRef<OsStr>,
+        K: AsRef<str>,
+        V: AsRef<str>,
     {
         self.options
             .push((key.as_ref().to_owned(), value.as_ref().to_owned()));
@@ -144,8 +143,8 @@ impl Config {
     /// this crate in the `build` step.
     pub fn env<K, V>(&mut self, key: K, value: V) -> &mut Config
     where
-        K: AsRef<OsStr>,
-        V: AsRef<OsStr>,
+        K: AsRef<str>,
+        V: AsRef<str>,
     {
         self.env
             .push((key.as_ref().to_owned(), value.as_ref().to_owned()));
@@ -163,8 +162,8 @@ impl Config {
     /// Set the standard library to link against when compiling with C++
     /// support (only Android).
     /// The given library name must not contain the `lib` prefix.
-    /// 
-    /// 
+    ///
+    ///
     /// Common values:
     /// - `c++_static`
     /// - `c++_shared`
@@ -188,11 +187,11 @@ impl Config {
         let mut cmd = self.xmake_command();
         cmd.arg("build");
 
-         // In case of xmake is waiting to download something
-         cmd.arg("--yes");
-         if self.verbose {
-             cmd.arg("-v");
-         }
+        // In case of xmake is waiting to download something
+        cmd.arg("--yes");
+        if self.verbose {
+            cmd.arg("-v");
+        }
 
         if self.target.is_some() {
             cmd.arg(self.target.clone().unwrap());
@@ -269,17 +268,20 @@ impl Config {
             }
 
             if plat == "android" {
-                if let Ok(ndk) = env::var("ANDROID_NDK_HOME") { 
+                if let Ok(ndk) = env::var("ANDROID_NDK_HOME") {
                     cmd.arg(format!("--ndk={}", ndk));
                 }
                 if self.cpp_link_stdlib.is_some() {
-                    cmd.arg(format!("--ndk_cxxstl={}", self.cpp_link_stdlib.clone().unwrap())); 
-                }   
+                    cmd.arg(format!(
+                        "--ndk_cxxstl={}",
+                        self.cpp_link_stdlib.clone().unwrap()
+                    ));
+                }
                 cmd.arg(format!("--toolchain={}", "ndk"));
             }
 
             if plat == "wasm" {
-                if let Ok(emscripten) = env::var("EMSCRIPTEN_HOME") { 
+                if let Ok(emscripten) = env::var("EMSCRIPTEN_HOME") {
                     cmd.arg(format!("--emsdk={}", emscripten));
                 }
                 cmd.arg(format!("--toolchain={}", "emcc"));
@@ -307,14 +309,14 @@ impl Config {
                 cmd.arg(format!("--toolchain={}", "cross"));
             }
         } else {
-            cmd.arg(format!("--plat={}", plat)); 
+            cmd.arg(format!("--plat={}", plat));
         }
 
         // Static CRT
         let static_crt = self.static_crt.unwrap_or_else(|| self.get_static_crt());
         let debug = match self.get_mode() {
             // rusct doesn't support debug version of the CRT
-            // "debug" => "d", 
+            // "debug" => "d",
             // "releasedbg" => "d",
             _ => "",
         };
@@ -323,20 +325,16 @@ impl Config {
             true => format!("--vs_runtime=MT{}", debug),
             false => format!("--vs_runtime=MD{}", debug),
         };
-        
+
         cmd.arg(runtime);
-        
+
         // Compilation mode: release, debug...
         let mode = self.get_mode();
         cmd.arg("-m").arg(mode);
 
         // Option
         for (key, val) in self.options.iter() {
-            let option = format!(
-                "--{}={}",
-                key.clone().into_string().unwrap(),
-                val.clone().into_string().unwrap()
-            );
+            let option = format!("--{}={}", key.clone(), val.clone(),);
             cmd.arg(option);
         }
 
@@ -349,9 +347,9 @@ impl Config {
         cmd.arg("install");
 
         let dst = self
-        .out_dir
-        .clone()
-        .unwrap_or_else(|| PathBuf::from(getenv_unwrap("OUT_DIR")));
+            .out_dir
+            .clone()
+            .unwrap_or_else(|| PathBuf::from(getenv_unwrap("OUT_DIR")));
 
         cmd.arg("-o").arg(dst.clone());
         if self.verbose {
@@ -478,16 +476,17 @@ impl Config {
         cmd
     }
 
-    fn xmake_executable(&mut self) -> OsString {
+    fn xmake_executable(&mut self) -> String {
         self.getenv_os("XMAKE")
-            .unwrap_or_else(|| OsString::from("xmake"))
+            .unwrap_or_else(|| String::from("xmake"))
     }
 
-    fn getenv_os(&mut self, v: &str) -> Option<OsString> {
+    fn getenv_os(&mut self, v: &str) -> Option<String> {
         if let Some(val) = self.env_cache.get(v) {
             return val.clone();
         }
-        let r = env::var_os(v);
+
+        let r = env::var(v).ok();
         println!("{} = {:?}", v, r);
         self.env_cache.insert(v.to_string(), r.clone());
         r
