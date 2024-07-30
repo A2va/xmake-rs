@@ -46,6 +46,86 @@ use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+/// Represents the different kinds of linkage for a library.
+///
+/// The `LinkKind` enum represents the different ways a library can be linked:
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LinkKind {
+    /// The library is statically linked, meaning its code is included directly in the final binary.
+    Static,
+    /// The library is dynamically linked, meaning the final binary references the library at runtime.
+    Dynamic,
+    /// The library is a system library, meaning it is provided by the operating system and not included in the final binary.
+    System,
+}
+
+/// Represents a single linked library.
+///
+/// The `Link` struct contains information about a single linked library, including its name and the kind of linkage.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Link {
+    /// The name of the linked library.
+    pub name: String,
+    /// The kind of linkage for the library.
+    pub kind: LinkKind,
+}
+
+/// Represents the link information for a build.
+///
+/// The `BuildLinkInfo` struct contains information about the libraries that are linked in a build, including the directories they are located in and the individual `Link` structs.
+#[derive(Default)]
+pub struct BuildInfo {
+    /// The directories that contain the linked libraries.
+    pub directories: Vec<String>,
+    /// The individual linked libraries.
+    pub links: Vec<Link>,
+    /// Whether the build uses the C++.
+    pub use_cxx: bool,
+    /// Whether the build uses the C++ standard library.
+    pub use_stl: bool,
+}
+
+impl Link {
+    /// Returns the name of the library as a string.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    /// Returns the kind of linkage for the library.
+    pub fn kind(&self) -> &LinkKind {
+        &self.kind
+    }
+
+    /// Creates a new `Link` with the given name and kind.
+    pub fn new(name: &str, kind: LinkKind) -> Link {
+        Link {
+            name: name.to_string(),
+            kind: kind,
+        }
+    }
+}
+
+impl BuildInfo {
+    /// Returns the directories that contain the linked libraries.
+    pub fn directories(&self) -> &[String] {
+        &self.directories
+    }
+
+    /// Returns the individual linked libraries.
+    pub fn links(&self) -> &[Link] {
+        &self.links
+    }
+
+    /// Returns whether the build uses C++.
+    pub fn use_cxx(&self) -> bool {
+        self.use_cxx
+    }
+
+    /// Returns whether the build uses C++ standard library.
+    pub fn use_stl(&self) -> bool {
+        self.use_stl
+    }
+}
+
 /// Builder style configuration for a pending XMake build.
 pub struct Config {
     path: PathBuf,
