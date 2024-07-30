@@ -45,6 +45,7 @@ use std::env;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::str::FromStr;
 
 /// Represents the different kinds of linkage for a library.
 ///
@@ -123,6 +124,99 @@ impl BuildInfo {
     /// Returns whether the build uses C++ standard library.
     pub fn use_stl(&self) -> bool {
         self.use_stl
+    }
+}
+
+/// Represents an error that occurred when parsing a `LinkKind` value from a string.
+///
+/// This error is returned when the string provided does not match any of the valid `LinkKind` variants.
+#[derive(Debug, PartialEq, Eq)]
+pub struct ParseLindKindError;
+
+impl FromStr for LinkKind {
+    type Err = ParseLindKindError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "static" => Ok(LinkKind::Static),
+            "shared" => Ok(LinkKind::Dynamic),
+            "system" => Ok(LinkKind::System),
+            _ => Err(ParseLindKindError),
+        }
+    }
+}
+
+/// Represents an error that occurred when parsing a `Link` struct from a string.
+///
+/// This error is returned when the string provided does not match the expected format for a `Link` struct.
+#[derive(Debug, PartialEq, Eq)]
+pub struct ParseLinkError;
+
+impl FromStr for Link {
+    type Err = ParseLinkError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        const NUMBER_OF_PARTS: usize = 2;
+
+        let parts: Vec<_> = s.split("/").collect();
+        if parts.len() != NUMBER_OF_PARTS {
+            return Err(ParseLinkError);
+        }
+
+        let kind_result: LinkKind = match parts[1].parse() {
+            Ok(v) => v,
+            Err(_) => return Err(ParseLinkError),
+        };
+
+        Ok(Link {
+            name: parts[0].to_string(),
+            kind: kind_result,
+        })
+    }
+}
+
+/// Represents an error that occurred when parsing `BuildLinkInfo` from a string.
+///
+/// This error is returned when the string provided does not match the expected format for `LinkInformation`.
+#[derive(Debug, PartialEq, Eq)]
+pub struct ParseBuildInfoError;
+
+impl FromStr for BuildInfo {
+    type Err = ParseBuildInfoError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        const LIBRARY_FIELD: &str = "links";
+        const DIRECTORY_FIELD: &str = "linkdirs";
+        const CXX_FIELD: &str = "cxx_used";
+        const STL_FIELD: &str = "stl_used";
+
+        let mut map = parse_info_pairs(s);
+
+        let keys = vec![LIBRARY_FIELD, DIRECTORY_FIELD, CXX_FIELD, STL_FIELD];
+        for key in keys {
+            if !map.contains_key(key) {
+                return Err(ParseBuildInfoError);
+            }
+        }
+
+        let directories: Vec<String> = match map.remove(DIRECTORY_FIELD) {
+            Some(v) => v,
+            None => return Err(ParseBuildInfoError),
+        }; // directories are already strings
+
+        let use_cxx = parse_field::<bool>(&map, CXX_FIELD)?;
+        let use_stl = parse_field::<bool>(&map, STL_FIELD)?;
+
+        let links: Vec<Link> = map[LIBRARY_FIELD]
+            .iter()
+            .map(|s| s.parse().map_err(|_| ParseBuildInfoError))
+            .collect::<Result<_, _>>()?;
+
+        Ok(BuildInfo {
+            directories: directories,
+            links: links,
+            use_cxx: use_cxx,
+            use_stl: use_stl,
+        })
     }
 }
 
@@ -595,6 +689,40 @@ fn run(cmd: &mut Command, program: &str) {
     }
 }
 
+/// Parses a string representation of a map of key-value pairs, where the values are
+/// separated by the '|' character.
+///
+/// The input string is expected to be in the format "key:value1|value2|...|valueN",
+/// where the values are separated by the '|' character. Any empty values are
+/// filtered out.
+///
+fn parse_info_pairs<T: AsRef<str>>(s: T) -> HashMap<String, Vec<String>> {
+    let str: String = s.as_ref().trim().to_string();
+    let mut map: HashMap<String, Vec<String>> = HashMap::new();
+
+    for l in str.lines() {
+        // Split between key values
+        let (key, values) = l.split_once(":").unwrap();
+        let v: Vec<_> = values
+            .split('|')
+            .map(|x| x.to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        map.insert(key.to_string(), v);
+    }
+    map
+}
+
+fn parse_field<T: FromStr>(
+    map: &HashMap<String, Vec<String>>,
+    field: &str,
+) -> Result<T, ParseBuildInfoError> {
+    map[field]
+        .first()
+        .ok_or(ParseBuildInfoError)
+        .and_then(|v| v.parse().map_err(|_| ParseBuildInfoError))
+}
+
 fn getenv_unwrap(v: &str) -> String {
     match env::var(v) {
         Ok(s) => s,
@@ -604,4 +732,85 @@ fn getenv_unwrap(v: &str) -> String {
 
 fn fail(s: &str) -> ! {
     panic!("\n{}\n\nbuild script failed, must exit now", s)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{BuildInfo, Link, LinkKind};
+
+    #[test]
+    fn parse_line() {
+        let expected_values: Vec<_> = vec!["value1", "value2", "value3"]
+            .iter()
+            .map(|x| x.to_string())
+            .collect();
+        let map = super::parse_info_pairs("key:value1|value2|value3");
+        assert!(map.contains_key("key"));
+        assert_eq!(map["key"], expected_values);
+    }
+
+    #[test]
+    fn parse_line_empty_values() {
+        let expected_values: Vec<_> = vec!["value1", "value2"]
+            .iter()
+            .map(|x| x.to_string())
+            .collect();
+        let map = super::parse_info_pairs("key:value1||value2");
+        assert!(map.contains_key("key"));
+        assert_eq!(map["key"], expected_values);
+    }
+
+    #[test]
+    fn parse_build_info_missing_keys() {
+        let mut s = String::new();
+        s.push_str("linkdirs:path/to/libA|path/to/libB|path\\to\\libC\n");
+        s.push_str("links:linkA/static|linkB/shared\n");
+
+        let build_info: Result<BuildInfo, _> = s.parse();
+        assert!(build_info.is_err());
+    }
+
+    #[test]
+    fn parse_build_info_missing_kind() {
+        let mut s = String::new();
+        s.push_str("links:linkA|linkB\n");
+        s.push_str("linkdirs:path/to/libA|path/to/libB|path\\to\\libC\n");
+
+        let build_info: Result<BuildInfo, _> = s.parse();
+        assert!(build_info.is_err());
+    }
+
+    #[test]
+    fn parse_build_info_missing_info() {
+        let mut s = String::new();
+        s.push_str("links:linkA/static|linkB/shared\n");
+        s.push_str("linkdirs:path/to/libA|path/to/libB|path\\to\\libC\n");
+
+        let build_info: Result<BuildInfo, _> = s.parse();
+        assert!(build_info.is_err());
+    }
+
+    #[test]
+    fn parse_build_info() {
+        let expected_links = vec![
+            Link::new("linkA", LinkKind::Static),
+            Link::new("linkB", LinkKind::Dynamic),
+        ];
+        let expected_directories = vec!["path/to/libA", "path/to/libB", "path\\to\\libC"];
+        let expected_cxx = true;
+        let expected_stl = false;
+
+        let mut s = String::new();
+        s.push_str("cxx_used:true\n");
+        s.push_str("stl_used:false\n");
+        s.push_str("links:linkA/static|linkB/shared\n");
+        s.push_str("linkdirs:path/to/libA|path/to/libB|path\\to\\libC\n");
+
+        let build_info: BuildInfo = s.parse().unwrap();
+
+        assert_eq!(build_info.links(), &expected_links);
+        assert_eq!(build_info.directories(), &expected_directories);
+        assert_eq!(build_info.use_cxx(), expected_cxx);
+        assert_eq!(build_info.use_stl(), expected_stl);
+    }
 }
