@@ -133,7 +133,8 @@ end
 function get_targets()
     local list = _g.targets_list
     if list == nil then
-        local values = os.getenv("XMAKERS_TARGETS") or nil
+        local env = os.getenv("XMAKERS_TARGETS") 
+        local values = (env ~= "") and env or nil
         if values then
             values = table.wrap(string.split(values, ";"))
         end
