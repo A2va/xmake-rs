@@ -77,13 +77,13 @@ pub struct Link {
 #[derive(Default)]
 pub struct BuildInfo {
     /// The directories that contain the linked libraries.
-    pub directories: Vec<String>,
+    directories: Vec<String>,
     /// The individual linked libraries.
-    pub links: Vec<Link>,
+    links: Vec<Link>,
     /// Whether the build uses the C++.
-    pub use_cxx: bool,
+    use_cxx: bool,
     /// Whether the build uses the C++ standard library.
-    pub use_stl: bool,
+    use_stl: bool,
 }
 
 impl Link {
