@@ -225,12 +225,14 @@ pub struct Config {
     path: PathBuf,
     target: Option<String>,
     verbose: bool,
+    auto_link: bool,
     out_dir: Option<PathBuf>,
     mode: Option<String>,
     options: Vec<(String, String)>,
     env: Vec<(String, String)>,
     static_crt: Option<bool>,
     cpp_link_stdlib: Option<String>,
+    build_info: BuildInfo,
     env_cache: HashMap<String, Option<String>>,
 }
 
@@ -262,12 +264,14 @@ impl Config {
             path: env::current_dir().unwrap().join(path),
             target: None,
             verbose: false,
+            auto_link: true,
             out_dir: None,
             mode: None,
             options: Vec::new(),
             env: Vec::new(),
             static_crt: None,
             cpp_link_stdlib: None,
+            build_info: BuildInfo::default(),
             env_cache: HashMap::new(),
         }
     }
@@ -283,6 +287,14 @@ impl Config {
     /// Sets verbose output.
     pub fn verbose(&mut self, value: bool) -> &mut Config {
         self.verbose = value;
+        self
+    }
+
+    /// Configures if targets and their dependencies should be linked.
+    ///
+    /// This option defaults to `true`.
+    pub fn auto_link(&mut self, value: bool) -> &mut Config {
+        self.auto_link = value;
         self
     }
 
@@ -515,6 +527,12 @@ impl Config {
         }
 
         run(&mut cmd, "xmake");
+    }
+
+    /// Returns a reference to the `BuildInfo` associated with this build.
+    /// <div class="warning">Note: Accessing this information before the build step will result in non-representative data.</div>
+    pub fn build_info(&self) -> &BuildInfo {
+        &self.build_info
     }
 
     /// Install target in OUT_DIR.
