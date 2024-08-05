@@ -66,9 +66,9 @@ pub enum LinkKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Link {
     /// The name of the linked library.
-    pub name: String,
+    name: String,
     /// The kind of linkage for the library.
-    pub kind: LinkKind,
+    kind: LinkKind,
 }
 
 /// Represents the link information for a build.
@@ -389,6 +389,27 @@ impl Config {
         let dst = self.install().join("lib");
         println!("cargo:root={}", dst.display());
 
+        if let Some(info) = self.get_build_info() {
+            self.build_info = info;
+        }
+
+        if self.auto_link {
+            for directory in self.build_info.directories() {
+                // TODO: The optional KIND can be one of dependency, crate, native, framework, or all.
+                // For now, framework is not supported, but eventually the kind must be set to all,
+                // because the lua script cannot tag which directories belong to which kind.
+                println!("cargo:rustc-link-search=native={}", directory);
+            }
+
+            for link in self.build_info.links() {
+                match link.kind() {
+                    LinkKind::Static => println!("cargo:rustc-link-lib=static={}", link.name()),
+                    LinkKind::Dynamic => println!("cargo:rustc-link-lib=dylib={}", link.name()),
+                    LinkKind::System => println!("cargo:rustc-link-lib={}", link.name()),
+                }
+            }
+        }
+
         dst
     }
 
@@ -558,6 +579,22 @@ impl Config {
         dst
     }
 
+    fn get_build_info(&mut self) -> Option<BuildInfo> {
+        let mut cmd = self.xmake_command();
+        cmd.arg("lua");
+        if self.verbose {
+            cmd.arg("-v");
+        }
+
+        let script_file = Path::new(file!()).parent().unwrap().join("build_info.lua");
+        cmd.arg(script_file);
+
+        if let Some(output) = run(&mut cmd, "xmake") {
+            return output.parse().ok();
+        }
+        None
+    }
+
     fn get_static_crt(&self) -> bool {
         let feature = env::var("CARGO_CFG_TARGET_FEATURE").unwrap_or(String::new());
         if feature.contains("crt-static") {
@@ -687,10 +724,10 @@ impl Config {
     }
 }
 
-fn run(cmd: &mut Command, program: &str) {
+fn run(cmd: &mut Command, program: &str) -> Option<String> {
     println!("running: {:?}", cmd);
-    let status = match cmd.status() {
-        Ok(status) => status,
+    let output = match cmd.output() {
+        Ok(out) => out,
         Err(ref e) if e.kind() == ErrorKind::NotFound => {
             fail(&format!(
                 "failed to execute command: {}\nis `{}` not installed?",
@@ -699,14 +736,14 @@ fn run(cmd: &mut Command, program: &str) {
         }
         Err(e) => fail(&format!("failed to execute command: {}", e)),
     };
-    if !status.success() {
+    if !output.status.success() {
         fail(&format!(
             "command did not execute successfully, got: {}",
-            status
+            output.status
         ));
     }
+    return String::from_utf8(output.stdout).ok();
 }
-
 /// Parses a string representation of a map of key-value pairs, where the values are
 /// separated by the '|' character.
 ///
