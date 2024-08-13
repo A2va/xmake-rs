@@ -220,6 +220,12 @@ impl FromStr for BuildInfo {
     }
 }
 
+#[derive(Default)]
+struct ConfigCache {
+    build_info: BuildInfo,
+    env: HashMap<String, Option<String>>,
+}
+
 /// Builder style configuration for a pending XMake build.
 pub struct Config {
     path: PathBuf,
@@ -232,8 +238,7 @@ pub struct Config {
     env: Vec<(String, String)>,
     static_crt: Option<bool>,
     cpp_link_stdlib: Option<String>,
-    build_info: BuildInfo,
-    env_cache: HashMap<String, Option<String>>,
+    cache: ConfigCache,
 }
 
 /// Builds the native library rooted at `path` with the default xmake options.
@@ -271,8 +276,7 @@ impl Config {
             env: Vec::new(),
             static_crt: None,
             cpp_link_stdlib: None,
-            build_info: BuildInfo::default(),
-            env_cache: HashMap::new(),
+            cache: ConfigCache::default(),
         }
     }
 
@@ -390,18 +394,20 @@ impl Config {
         println!("cargo:root={}", dst.display());
 
         if let Some(info) = self.get_build_info() {
-            self.build_info = info;
+            self.cache.build_info = info;
         }
 
         if self.auto_link {
-            for directory in self.build_info.directories() {
+            let build_info = &self.cache.build_info;
+
+            for directory in build_info.directories() {
                 // TODO: The optional KIND can be one of dependency, crate, native, framework, or all.
                 // For now, framework is not supported, but eventually the kind must be set to all,
                 // because the lua script cannot tag which directories belong to which kind.
                 println!("cargo:rustc-link-search=native={}", directory);
             }
 
-            for link in self.build_info.links() {
+            for link in build_info.links() {
                 match link.kind() {
                     LinkKind::Static => println!("cargo:rustc-link-lib=static={}", link.name()),
                     LinkKind::Dynamic => println!("cargo:rustc-link-lib=dylib={}", link.name()),
@@ -553,7 +559,7 @@ impl Config {
     /// Returns a reference to the `BuildInfo` associated with this build.
     /// <div class="warning">Note: Accessing this information before the build step will result in non-representative data.</div>
     pub fn build_info(&self) -> &BuildInfo {
-        &self.build_info
+        &self.cache.build_info
     }
 
     /// Install target in OUT_DIR.
@@ -713,13 +719,13 @@ impl Config {
     }
 
     fn getenv_os(&mut self, v: &str) -> Option<String> {
-        if let Some(val) = self.env_cache.get(v) {
+        if let Some(val) = self.cache.env.get(v) {
             return val.clone();
         }
 
         let r = env::var(v).ok();
         println!("{} = {:?}", v, r);
-        self.env_cache.insert(v.to_string(), r.clone());
+        self.cache.env.insert(v.to_string(), r.clone());
         r
     }
 }
