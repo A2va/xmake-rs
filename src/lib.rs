@@ -223,6 +223,8 @@ impl FromStr for BuildInfo {
 #[derive(Default)]
 struct ConfigCache {
     build_info: BuildInfo,
+    plat: Option<String>,
+    arch: Option<String>,
     env: HashMap<String, Option<String>>,
 }
 
@@ -443,38 +445,38 @@ impl Config {
         let host = getenv_unwrap("HOST");
         let target = getenv_unwrap("TARGET");
 
-        // List of xmake platform https://github.com/xmake-io/xmake/tree/master/xmake/platforms
         let os = getenv_unwrap("CARGO_CFG_TARGET_OS");
-        let plat = match self.get_xmake_plat(os.clone()) {
-            Some(p) => p,
-            None => panic!("unsupported rust target: {}", os),
-        };
+
+        // Convert rust platform and arch to xmake
+        let plat = self
+            .get_xmake_plat(os.clone())
+            .expect("unsupported rust target");
+
+        let arch = match (
+            plat.as_str(),
+            getenv_unwrap("CARGO_CFG_TARGET_ARCH").as_str(),
+        ) {
+            ("android", a) if os == "androideabi" => match a {
+                "arm" => "armeabi", // TODO Check with cc-rs if it's true
+                "armv7" => "armeabi-v7a",
+                a => a,
+            },
+            ("android", "aarch64") => "arm64-v8a",
+            ("android", "i686") => "x86",
+            ("appletvos", "aarch64") => "arm64",
+            ("watchos", "arm64_32") => "armv7k",
+            ("watchos", "armv7k") => "armv7k",
+            ("iphoneos", "aarch64") => "arm64",
+            ("macosx", "aarch64") => "arm64",
+            ("windows", "i686") => "x86",
+            ("wasm", _) => "wasm32",
+            (_, "aarch64") => "arm64",
+            (_, "i686") => "i386",
+            (_, a) => a,
+        }
+        .to_string();
 
         if host != target {
-            let arch = match (
-                plat.as_str(),
-                getenv_unwrap("CARGO_CFG_TARGET_ARCH").as_str(),
-            ) {
-                ("android", a) if os == "androideabi" => match a {
-                    "arm" => "armeabi", // TODO Check with cc-rs if it's true
-                    "armv7" => "armeabi-v7a",
-                    a => a,
-                },
-                ("android", "aarch64") => "arm64-v8a",
-                ("android", "i686") => "x86",
-                ("appletvos", "aarch64") => "arm64",
-                ("watchos", "arm64_32") => "armv7k",
-                ("watchos", "armv7k") => "armv7k",
-                ("iphoneos", "aarch64") => "arm64",
-                ("macosx", "aarch64") => "arm64",
-                ("windows", "i686") => "x86",
-                ("wasm", _) => "wasm32",
-                (_, "aarch64") => "arm64",
-                (_, "i686") => "i386",
-                (_, a) => a,
-            }
-            .to_string();
-
             cmd.arg(format!("--plat={}", plat));
             if plat != "cross" {
                 //cmd.arg(format!("--arch={}", arch));
@@ -554,6 +556,9 @@ impl Config {
         }
 
         run(&mut cmd, "xmake");
+
+        self.cache.plat = Some(plat);
+        self.cache.arch = Some(arch);
     }
 
     /// Returns a reference to the `BuildInfo` associated with this build.
