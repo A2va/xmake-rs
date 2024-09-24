@@ -234,7 +234,9 @@ end
 function _get_links(target)
     local linkdirs = _get_linkdirs(target)
     
-    local syslinks = utils.get_from_target(target, "syslinks", "*")
+    local syslinks = hashset.from(utils.get_from_target(target, "syslinks", "*"))
+    local frameworks = hashset.from(utils.get_from_target(target, "frameworks", "*"))
+
     local have_groups_order = (target:get_from("linkgroups", "*") ~= nil) or (target:get_from("linkorders", "*") ~= nil)
 
     -- a target can have a different file name from the target name (set_basename)
@@ -254,16 +256,21 @@ function _get_links(target)
         local values = (type(item.values[1]) == "table") and table.unpack(item.values) or item.values
 
         local is_syslinks = item.name == "syslinks"
+        local is_frameworks = item.name == "frameworks"
 
-        if not (have_groups_order or is_syslinks) and not is_target(values[1]) then
+        if not (have_groups_order or is_syslinks or is_frameworks) and not is_target(values[1]) then
             goto continue
         end
 
         for _, value in ipairs(values) do
-            local kind = item.name == "syslinks" and "syslinks" or nil
+            local kind = is_syslinks and "syslinks" or nil
+            kind = is_frameworks and "frameworks" or kind
+
             if item.name == "linkgroups" then
                 if syslinks:has(value) then
                     kind = "syslinks"
+                elseif frameworks:has(value) then
+                    kind = "frameworks"
                 end
             end
 

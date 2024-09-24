@@ -58,6 +58,8 @@ pub enum LinkKind {
     Dynamic,
     /// The library is a system library, meaning it is provided by the operating system and not included in the final binary.
     System,
+    /// The library is a framework, like [`System`]: self::LinkKind#variant.System it is provided by the operating system but used only on macos.
+    Framework,
 }
 
 /// Represents a single linked library.
@@ -226,6 +228,20 @@ struct ConfigCache {
     plat: Option<String>,
     arch: Option<String>,
     env: HashMap<String, Option<String>>,
+}
+
+impl ConfigCache {
+    /// Returns the platform string for this configuration.
+    /// Panic if the config has not been done yet
+    fn plat(&self) -> &String {
+        return self.plat.as_ref().unwrap();
+    }
+
+    /// Returns the architecture string for this configuration.
+    /// Panic if the config has not been done yet
+    fn arch(&self) -> &String {
+        return self.arch.as_ref().unwrap();
+    }
 }
 
 /// Builder style configuration for a pending XMake build.
@@ -406,6 +422,7 @@ impl Config {
                 // TODO: The optional KIND can be one of dependency, crate, native, framework, or all.
                 // For now, framework is not supported, but eventually the kind must be set to all,
                 // because the lua script cannot tag which directories belong to which kind.
+                // Reference: https://doc.rust-lang.org/cargo/reference/build-scripts.html#rustc-link-search
                 println!("cargo:rustc-link-search=native={}", directory);
             }
 
@@ -413,7 +430,12 @@ impl Config {
                 match link.kind() {
                     LinkKind::Static => println!("cargo:rustc-link-lib=static={}", link.name()),
                     LinkKind::Dynamic => println!("cargo:rustc-link-lib=dylib={}", link.name()),
-                    LinkKind::System => println!("cargo:rustc-link-lib={}", link.name()),
+                    LinkKind::Framework if self.cache.plat() == "macosx" => {
+                        println!("cargo:rustc-link-lib=framework={}", link.name())
+                    },
+                    // For rust, framework type is only for macosx but can be used on multiple system in xmake
+                    // so fallback to the system libraries case
+                    LinkKind::System | LinkKind::Framework => println!("cargo:rustc-link-lib={}", link.name()),
                 }
             }
         }
