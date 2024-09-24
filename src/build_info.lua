@@ -344,7 +344,7 @@ function _stl_usage(target, sourcebatch, opt)
             end
 
             -- import <iostream>;
-            if utils.is_stl_used(target, {require}) then
+            if utils.is_stl_used(target, require) then
                 files:insert(sourcefile)
                 return true -- signal to stop
             end
