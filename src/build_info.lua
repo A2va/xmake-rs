@@ -103,7 +103,6 @@ function _print_infos(infos)
     end
 end
 
-
 -- create a binary target, that depends on all given targets
 function _get_binary_target(targets)
 
@@ -115,6 +114,8 @@ function _get_binary_target(targets)
 
     -- reset some info
     fake_target:set("deps", nil)
+    fake_target:set("packages", nil)
+    fake_target:set("rules", nil)
     fake_target:set("links", nil)
     fake_target:set("syslinks", nil)
     fake_target:set("frameworks", nil)
