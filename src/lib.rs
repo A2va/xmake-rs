@@ -163,8 +163,8 @@ impl Config {
     /// Set the standard library to link against when compiling with C++
     /// support (only Android).
     /// The given library name must not contain the `lib` prefix.
-    /// 
-    /// 
+    ///
+    ///
     /// Common values:
     /// - `c++_static`
     /// - `c++_shared`
@@ -188,11 +188,11 @@ impl Config {
         let mut cmd = self.xmake_command();
         cmd.arg("build");
 
-         // In case of xmake is waiting to download something
-         cmd.arg("--yes");
-         if self.verbose {
-             cmd.arg("-v");
-         }
+        // In case of xmake is waiting to download something
+        cmd.arg("--yes");
+        if self.verbose {
+            cmd.arg("-v");
+        }
 
         if self.target.is_some() {
             cmd.arg(self.target.clone().unwrap());
@@ -269,17 +269,20 @@ impl Config {
             }
 
             if plat == "android" {
-                if let Ok(ndk) = env::var("ANDROID_NDK_HOME") { 
+                if let Ok(ndk) = env::var("ANDROID_NDK_HOME") {
                     cmd.arg(format!("--ndk={}", ndk));
                 }
                 if self.cpp_link_stdlib.is_some() {
-                    cmd.arg(format!("--ndk_cxxstl={}", self.cpp_link_stdlib.clone().unwrap())); 
-                }   
+                    cmd.arg(format!(
+                        "--ndk_cxxstl={}",
+                        self.cpp_link_stdlib.clone().unwrap()
+                    ));
+                }
                 cmd.arg(format!("--toolchain={}", "ndk"));
             }
 
             if plat == "wasm" {
-                if let Ok(emscripten) = env::var("EMSCRIPTEN_HOME") { 
+                if let Ok(emscripten) = env::var("EMSCRIPTEN_HOME") {
                     cmd.arg(format!("--emsdk={}", emscripten));
                 }
                 cmd.arg(format!("--toolchain={}", "emcc"));
@@ -307,25 +310,27 @@ impl Config {
                 cmd.arg(format!("--toolchain={}", "cross"));
             }
         } else {
-            cmd.arg(format!("--plat={}", plat)); 
+            cmd.arg(format!("--plat={}", plat));
         }
 
-        // Static CRT
-        let static_crt = self.static_crt.unwrap_or_else(|| self.get_static_crt());
-        let debug = match self.get_mode() {
-            // rusct doesn't support debug version of the CRT
-            // "debug" => "d", 
-            // "releasedbg" => "d",
-            _ => "",
-        };
+        if plat == "windows" {
+            // Static CRT
+            let static_crt = self.static_crt.unwrap_or_else(|| self.get_static_crt());
+            let debug = match self.get_mode() {
+                // rusct doesn't support debug version of the CRT
+                // "debug" => "d",
+                // "releasedbg" => "d",
+                _ => "",
+            };
 
-        let runtime = match static_crt {
-            true => format!("--vs_runtime=MT{}", debug),
-            false => format!("--vs_runtime=MD{}", debug),
-        };
-        
-        cmd.arg(runtime);
-        
+            let runtime = match static_crt {
+                true => format!("--runtimes=MT{}", debug),
+                false => format!("--runtimes=MD{}", debug),
+            };
+
+            cmd.arg(runtime);
+        }
+
         // Compilation mode: release, debug...
         let mode = self.get_mode();
         cmd.arg("-m").arg(mode);
@@ -349,9 +354,9 @@ impl Config {
         cmd.arg("install");
 
         let dst = self
-        .out_dir
-        .clone()
-        .unwrap_or_else(|| PathBuf::from(getenv_unwrap("OUT_DIR")));
+            .out_dir
+            .clone()
+            .unwrap_or_else(|| PathBuf::from(getenv_unwrap("OUT_DIR")));
 
         cmd.arg("-o").arg(dst.clone());
         if self.verbose {
