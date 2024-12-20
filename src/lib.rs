@@ -60,6 +60,8 @@ pub enum LinkKind {
     System,
     /// The library is a framework, like [`System`]: self::LinkKind#variant.System it is provided by the operating system but used only on macos.
     Framework,
+    /// The library is unknown, meaning its kind could not be determined.
+    Unknown
 }
 
 /// Represents a single linked library.
@@ -404,11 +406,9 @@ impl Config {
             let build_info = &self.cache.build_info;
 
             for directory in build_info.directories() {
-                // TODO: The optional KIND can be one of dependency, crate, native, framework, or all.
-                // For now, framework is not supported, but eventually the kind must be set to all,
-                // because the lua script cannot tag which directories belong to which kind.
                 // Reference: https://doc.rust-lang.org/cargo/reference/build-scripts.html#rustc-link-search
                 println!("cargo:rustc-link-search=native={}", directory);
+                println!("cargo:rustc-link-search=framework={}", directory);
             }
 
             for link in build_info.links() {
@@ -423,6 +423,8 @@ impl Config {
                     LinkKind::System | LinkKind::Framework => {
                         println!("cargo:rustc-link-lib={}", link.name())
                     }
+                    // Let try cargo handle the rest
+                    LinkKind::Unknown => println!("cargo:rustc-link-lib={}", link.name()),
                 }
             }
         }
@@ -487,10 +489,8 @@ impl Config {
 
         if host != target {
             cmd.arg(format!("--plat={}", plat));
-            if plat != "cross" {
-                //cmd.arg(format!("--arch={}", arch));
-            }
-
+            cmd.arg(format!("--arch={}", arch));
+          
             if plat == "android" {
                 if let Ok(ndk) = env::var("ANDROID_NDK_HOME") {
                     cmd.arg(format!("--ndk={}", ndk));

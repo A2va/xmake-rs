@@ -217,19 +217,17 @@ function _get_linkdirs(target, opt)
 end
 
 function _find_kind(link, linkdirs)
-    -- on windows assume shared
-    local kind = is_plat("windows") and "shared" or "static"
-    local lib = find_library(link, linkdirs, {kind = kind, plat = config.plat()})
-
-    -- if the library is not found, assume it's the opposite
+    -- In the xmake codebase, shared comes before static in the kind table.
+    -- But we want to make sure that shared is before static, at least on Windows 
+    -- (it doesn't matter on other platforms), because .lib files are always in the same folder as the .dll file.
+    -- And since it's the same as static library, we need to check the shared kind first.
+    local lib = find_library(link, linkdirs, {kind = {"shared", "static"}, plat = config.plat()})
     if not lib then
-        if kind == "shared" then
-            return "static"
-        end
-        return "shared"
+        return "unknown"
     end
     return lib.kind
 end
+
 
 function _get_links(target)
     local linkdirs = _get_linkdirs(target)
@@ -254,7 +252,7 @@ function _get_links(target)
 
     for _, item in ipairs(items) do 
         local values = (type(item.values[1]) == "table") and table.unpack(item.values) or item.values
-
+        
         local is_syslinks = item.name == "syslinks"
         local is_frameworks = item.name == "frameworks"
 
