@@ -88,6 +88,21 @@ pub struct BuildInfo {
     use_stl: bool,
 }
 
+/// Represents errors that can occur when parsing a string to it's `BuildInfo` representation.
+#[derive(Debug, PartialEq, Eq)]
+pub enum ParsingError {
+    /// Given kind did not match any of the `LinkKind` variants.
+    InvalidKind,
+    /// Missing at least one key to construct `BuildInfo`.
+    MissingKey,
+    /// Link string is malformed.
+    MalformedLink,
+    /// Multiple values when it's not supposed to
+    MultipleValues,
+    /// Error when converting string a type
+    ParseError
+}
+
 impl Link {
     /// Returns the name of the library as a string.
     pub fn name(&self) -> &str {
@@ -129,46 +144,30 @@ impl BuildInfo {
     }
 }
 
-/// Represents an error that occurred when parsing a `LinkKind` value from a string.
-///
-/// This error is returned when the string provided does not match any of the valid `LinkKind` variants.
-#[derive(Debug, PartialEq, Eq)]
-pub struct ParseLindKindError;
-
 impl FromStr for LinkKind {
-    type Err = ParseLindKindError;
+    type Err = ParsingError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "static" => Ok(LinkKind::Static),
             "shared" => Ok(LinkKind::Dynamic),
             "system" => Ok(LinkKind::System),
-            _ => Err(ParseLindKindError),
+            _ => Err(ParsingError::InvalidKind),
         }
     }
 }
 
-/// Represents an error that occurred when parsing a `Link` struct from a string.
-///
-/// This error is returned when the string provided does not match the expected format for a `Link` struct.
-#[derive(Debug, PartialEq, Eq)]
-pub struct ParseLinkError;
-
 impl FromStr for Link {
-    type Err = ParseLinkError;
+    type Err = ParsingError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         const NUMBER_OF_PARTS: usize = 2;
 
         let parts: Vec<_> = s.split("/").collect();
         if parts.len() != NUMBER_OF_PARTS {
-            return Err(ParseLinkError);
+            return Err(ParsingError::MalformedLink);
         }
 
-        let kind_result: LinkKind = match parts[1].parse() {
-            Ok(v) => v,
-            Err(_) => return Err(ParseLinkError),
-        };
-
+        let kind_result: LinkKind = parts[1].parse()?;
         Ok(Link {
             name: parts[0].to_string(),
             kind: kind_result,
@@ -176,14 +175,8 @@ impl FromStr for Link {
     }
 }
 
-/// Represents an error that occurred when parsing `BuildLinkInfo` from a string.
-///
-/// This error is returned when the string provided does not match the expected format for `LinkInformation`.
-#[derive(Debug, PartialEq, Eq)]
-pub struct ParseBuildInfoError;
-
 impl FromStr for BuildInfo {
-    type Err = ParseBuildInfoError;
+    type Err = ParsingError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         const LIBRARY_FIELD: &str = "links";
@@ -196,22 +189,14 @@ impl FromStr for BuildInfo {
         let keys = vec![LIBRARY_FIELD, DIRECTORY_FIELD, CXX_FIELD, STL_FIELD];
         for key in keys {
             if !map.contains_key(key) {
-                return Err(ParseBuildInfoError);
+                return Err(ParsingError::MissingKey);
             }
         }
 
-        let directories: Vec<String> = match map.remove(DIRECTORY_FIELD) {
-            Some(v) => v,
-            None => return Err(ParseBuildInfoError),
-        }; // directories are already strings
-
+        let directories = parse_field::<Vec<String>>(&map, DIRECTORY_FIELD)?;
         let use_cxx = parse_field::<bool>(&map, CXX_FIELD)?;
         let use_stl = parse_field::<bool>(&map, STL_FIELD)?;
-
-        let links: Vec<Link> = map[LIBRARY_FIELD]
-            .iter()
-            .map(|s| s.parse().map_err(|_| ParseBuildInfoError))
-            .collect::<Result<_, _>>()?;
+        let links = parse_field::<Vec<Link>>(&map, LIBRARY_FIELD)?;
 
         Ok(BuildInfo {
             directories: directories,
@@ -432,10 +417,12 @@ impl Config {
                     LinkKind::Dynamic => println!("cargo:rustc-link-lib=dylib={}", link.name()),
                     LinkKind::Framework if self.cache.plat() == "macosx" => {
                         println!("cargo:rustc-link-lib=framework={}", link.name())
-                    },
+                    }
                     // For rust, framework type is only for macosx but can be used on multiple system in xmake
                     // so fallback to the system libraries case
-                    LinkKind::System | LinkKind::Framework => println!("cargo:rustc-link-lib={}", link.name()),
+                    LinkKind::System | LinkKind::Framework => {
+                        println!("cargo:rustc-link-lib={}", link.name())
+                    }
                 }
             }
         }
@@ -801,14 +788,63 @@ fn parse_info_pairs<T: AsRef<str>>(s: T) -> HashMap<String, Vec<String>> {
     map
 }
 
-fn parse_field<T: FromStr>(
+// This trait may be replaced by the unstable auto trait feature
+// References:
+// https://users.rust-lang.org/t/how-to-exclude-a-type-from-generic-trait-implementation/26156/9
+// https://doc.rust-lang.org/beta/unstable-book/language-features/auto-traits.html
+// https://doc.rust-lang.org/beta/unstable-book/language-features/negative-impls.html
+trait DirectParse {}
+
+// Implement for all primitive types that should use the scalar implementation
+impl DirectParse for bool {}
+impl DirectParse for u32 {}
+impl DirectParse for String {}
+
+trait ParseField<T> {
+    fn parse_field(map: &HashMap<String, Vec<String>>, field: &str) -> Result<T, ParsingError>;
+}
+
+// Only implement for types that implement DirectParse
+impl<T> ParseField<T> for T 
+where
+    T: FromStr + DirectParse
+{
+    fn parse_field(map: &HashMap<String, Vec<String>>, field: &str) -> Result<T, ParsingError> {
+        let values = map.get(field).ok_or(ParsingError::MissingKey)?;
+        if values.len() > 1 {
+            return Err(ParsingError::MultipleValues);
+        }
+
+        let parsed: Vec<T> = values
+            .iter()
+            .map(|s| s.parse::<T>().map_err(|_| ParsingError::ParseError))
+            .collect::<Result<Vec<T>, ParsingError>>()?;
+        parsed.into_iter().next().ok_or(ParsingError::MissingKey)
+    }
+}
+
+// Vector implementation remains unchanged
+impl<T> ParseField<Vec<T>> for Vec<T>
+where
+    T: FromStr
+{
+    fn parse_field(map: &HashMap<String, Vec<String>>, field: &str) -> Result<Vec<T>, ParsingError> {
+        let values = map.get(field).ok_or(ParsingError::MissingKey)?;
+        values
+            .iter()
+            .map(|s| s.parse::<T>().map_err(|_| ParsingError::ParseError))
+            .collect::<Result<Vec<T>, ParsingError>>()
+    }
+}
+
+fn parse_field<T>(
     map: &HashMap<String, Vec<String>>,
     field: &str,
-) -> Result<T, ParseBuildInfoError> {
-    map[field]
-        .first()
-        .ok_or(ParseBuildInfoError)
-        .and_then(|v| v.parse().map_err(|_| ParseBuildInfoError))
+) -> Result<T, ParsingError>
+where
+    T: ParseField<T>,
+{
+    T::parse_field(map, field)
 }
 
 fn getenv_unwrap(v: &str) -> String {
@@ -824,48 +860,58 @@ fn fail(s: &str) -> ! {
 
 #[cfg(test)]
 mod tests {
-    use crate::{BuildInfo, Link, LinkKind};
+    use crate::{parse_field, parse_info_pairs, BuildInfo, Link, LinkKind, ParsingError};
 
     #[test]
     fn parse_line() {
-        let expected_values: Vec<_> = vec!["value1", "value2", "value3"]
-            .iter()
-            .map(|x| x.to_string())
-            .collect();
-        let map = super::parse_info_pairs("key:value1|value2|value3");
+        let expected_values: Vec<_> = ["value1", "value2", "value3"].map(String::from).to_vec();
+        let map = parse_info_pairs("key:value1|value2|value3");
         assert!(map.contains_key("key"));
         assert_eq!(map["key"], expected_values);
     }
 
     #[test]
     fn parse_line_empty_values() {
-        let expected_values: Vec<_> = vec!["value1", "value2"]
-            .iter()
-            .map(|x| x.to_string())
-            .collect();
-        let map = super::parse_info_pairs("key:value1||value2");
+        let expected_values: Vec<_> = ["value1", "value2"].map(String::from).to_vec();
+        let map = parse_info_pairs("key:value1||value2");
         assert!(map.contains_key("key"));
         assert_eq!(map["key"], expected_values);
     }
 
     #[test]
-    fn parse_build_info_missing_keys() {
+    fn parse_field_multiple_values() {
+        let map = parse_info_pairs("key:value1|value2|value3");
+        let build_info: Result<String, _> = parse_field(&map, "key");
+        assert!(map.contains_key("key"));
+        assert!(build_info.is_err()); 
+        assert_eq!(build_info.err().unwrap(), ParsingError::MultipleValues);
+    }
+
+    #[test]
+    fn parse_build_info_missing_key() {
         let mut s = String::new();
         s.push_str("linkdirs:path/to/libA|path/to/libB|path\\to\\libC\n");
         s.push_str("links:linkA/static|linkB/shared\n");
 
         let build_info: Result<BuildInfo, _> = s.parse();
         assert!(build_info.is_err());
+        assert_eq!(build_info.err().unwrap(), ParsingError::MissingKey);
     }
 
     #[test]
     fn parse_build_info_missing_kind() {
         let mut s = String::new();
+        s.push_str("cxx_used:true\n");
+        s.push_str("stl_used:false\n");
         s.push_str("links:linkA|linkB\n");
         s.push_str("linkdirs:path/to/libA|path/to/libB|path\\to\\libC\n");
 
         let build_info: Result<BuildInfo, _> = s.parse();
         assert!(build_info.is_err());
+
+        // For now the returned error is not MalformedLink because map_err is parse_field shallow
+        // all the errors are converted to ParsingError::ParseError
+        // assert_eq!(build_info.err().unwrap(), ParsingError::MalformedLink);
     }
 
     #[test]
@@ -880,7 +926,7 @@ mod tests {
 
     #[test]
     fn parse_build_info() {
-        let expected_links = vec![
+        let expected_links = [
             Link::new("linkA", LinkKind::Static),
             Link::new("linkB", LinkKind::Dynamic),
         ];
