@@ -18,7 +18,7 @@ import("core.base.hashset")
 import("core.project.config")
 import("core.platform.platform")
 
--- source: ://github.com/xmake-io/xmake/blob/master/xmake/core/tool/builder.lua
+-- source: https://github.com/xmake-io/xmake/blob/master/xmake/core/tool/builder.lua
 
 -- builder: get the extra configuration from value
 function _extraconf(extras, value)

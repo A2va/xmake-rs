@@ -129,7 +129,7 @@ function _get_binary_target(targets)
         end
     end
 
-    -- normally this method already present in the xmake codebase
+    -- normally this method is already present in the xmake codebase
     -- but the opt.interface is set to true which is not what I want, so I override it
     fake_target.pkgenvs = function(self)
         local pkgenvs = self._PKGENVS
@@ -188,9 +188,9 @@ function _get_linkdirs(target, opt)
     linkdirs = hashset.from(linkdirs)
     local envs = target:pkgenvs()
 
-    local values = {}
+    local values = ""
     if envs then
-        local values = is_plat("windows") and envs.PATH or envs.LD_LIBRARY_PATH
+        values = is_plat("windows") and envs.PATH or envs.LD_LIBRARY_PATH
         if is_plat("macosx") then
             values = envs.DYLD_LIBRARY_PATH
         end
