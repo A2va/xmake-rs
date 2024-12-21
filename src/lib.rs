@@ -154,6 +154,8 @@ impl FromStr for LinkKind {
             "static" => Ok(LinkKind::Static),
             "shared" => Ok(LinkKind::Dynamic),
             "system" => Ok(LinkKind::System),
+            "framework" => Ok(LinkKind::Framework),
+            "unknown" => Ok(LinkKind::Unknown),
             _ => Err(ParsingError::InvalidKind),
         }
     }
