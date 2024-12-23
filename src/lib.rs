@@ -608,7 +608,9 @@ impl Config {
             cmd.arg("-v");
         }
 
-        let script_file = Path::new(file!()).parent().unwrap().join("build_info.lua");
+        // Get absolute path to the crate root
+        let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let script_file = crate_root.join("src").join("build_info.lua");
         cmd.arg(script_file);
 
         if let Some(output) = run(&mut cmd, "xmake") {
