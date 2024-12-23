@@ -759,9 +759,11 @@ fn run(cmd: &mut Command, program: &str) -> Option<String> {
         Err(e) => fail(&format!("failed to execute command: {}", e)),
     };
     if !output.status.success() {
+        let stdout = String::from_utf8(output.stdout).ok();
         fail(&format!(
-            "command did not execute successfully, got: {}",
-            output.status
+            "command did not execute successfully, got: {}\nstdout: {}",
+            output.status,
+            stdout.unwrap_or_default()
         ));
     }
     return String::from_utf8(output.stdout).ok();
@@ -779,13 +781,14 @@ fn parse_info_pairs<T: AsRef<str>>(s: T) -> HashMap<String, Vec<String>> {
 
     for l in str.lines() {
         // Split between key values
-        let (key, values) = l.split_once(":").unwrap();
-        let v: Vec<_> = values
-            .split('|')
-            .map(|x| x.to_string())
-            .filter(|s| !s.is_empty())
-            .collect();
-        map.insert(key.to_string(), v);
+        if let Some((key,values)) =l.split_once(":") {
+            let v: Vec<_> = values
+                .split('|')
+                .map(|x| x.to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+            map.insert(key.to_string(), v);
+        }
     }
     map
 }
