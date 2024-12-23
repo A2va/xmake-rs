@@ -233,6 +233,7 @@ pub struct Config {
     options: Vec<(String, String)>,
     env: Vec<(String, String)>,
     static_crt: Option<bool>,
+    runtimes: Option<Vec<String>>,
     cpp_link_stdlib: Option<String>,
     cache: ConfigCache,
 }
@@ -271,6 +272,7 @@ impl Config {
             options: Vec::new(),
             env: Vec::new(),
             static_crt: None,
+            runtimes: None,
             cpp_link_stdlib: None,
             cache: ConfigCache::default(),
         }
@@ -361,6 +363,18 @@ impl Config {
         self.cpp_link_stdlib = Some(stblib.to_string());
         self
     }
+
+    /// Sets the runtimes to use for this compilation.
+    ///
+    /// This method takes a collection of runtime names, which will be passed to
+    /// the `xmake` command during the build process. The runtimes specified here
+    /// will be used to determine the appropriate C++ standard library to link
+    /// against.
+    pub fn runtimes<T: ToVec>(&mut self, runtimes: T) -> &mut Config {
+        self.runtimes = Some(runtimes.to_vec());
+        self
+    }
+    
 
     /// Run this configuration, compiling the library with all the configured
     /// options.
@@ -759,6 +773,29 @@ fn run(cmd: &mut Command, program: &str) -> Option<String> {
     }
     return String::from_utf8(output.stdout).ok();
 }
+
+trait ToVec {
+    fn to_vec(&self) -> Vec<String>;
+}
+
+impl ToVec for String {
+    fn to_vec(&self) -> Vec<String> {
+        vec![self.clone()]
+    }
+}
+
+impl ToVec for Vec<String> {
+    fn to_vec(&self) -> Vec<String> {
+        self.clone()
+    }
+}
+
+impl ToVec for &str {
+    fn to_vec(&self) -> Vec<String> {
+        vec![self.to_string()]
+    }
+}
+
 /// Parses a string representation of a map of key-value pairs, where the values are
 /// separated by the '|' character.
 ///
