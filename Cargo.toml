@@ -14,3 +14,9 @@ categories = ["development-tools::build-utils"]
 
 [dependencies]
 cc = "1.0.72"
+
+[workspace]
+members = [
+    ".",
+    "tests/minimal-example",
+]
