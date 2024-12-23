@@ -61,7 +61,7 @@ pub enum LinkKind {
     /// The library is a framework, like [`System`]: self::LinkKind#variant.System it is provided by the operating system but used only on macos.
     Framework,
     /// The library is unknown, meaning its kind could not be determined.
-    Unknown
+    Unknown,
 }
 
 /// Represents a single linked library.
@@ -102,7 +102,7 @@ pub enum ParsingError {
     /// Multiple values when it's not supposed to
     MultipleValues,
     /// Error when converting string a type
-    ParseError
+    ParseError,
 }
 
 impl Link {
@@ -190,7 +190,7 @@ impl FromStr for BuildInfo {
 
         let use_cxx = parse_field::<bool>(&map, "cxx_used")?;
         let use_stl = parse_field::<bool>(&map, "stl_used")?;
-    
+
         Ok(BuildInfo {
             directories: directories,
             links: links,
@@ -233,7 +233,7 @@ pub struct Config {
     options: Vec<(String, String)>,
     env: Vec<(String, String)>,
     static_crt: Option<bool>,
-    runtimes: Option<Vec<String>>,
+    runtimes: Option<String>,
     cpp_link_stdlib: Option<String>,
     cache: ConfigCache,
 }
@@ -370,11 +370,17 @@ impl Config {
     /// the `xmake` command during the build process. The runtimes specified here
     /// will be used to determine the appropriate C++ standard library to link
     /// against.
-    pub fn runtimes<T: ToVec>(&mut self, runtimes: T) -> &mut Config {
-        self.runtimes = Some(runtimes.to_vec());
+    /// Common values:
+    /// - `c++_static`
+    /// - `c++_shared`
+    /// - `gnustl_static`
+    /// - `gnustl_shared`
+    /// - `stlport_shared`
+    /// - `stlport_static`
+    pub fn runtimes<T: CommaSeparated>(&mut self, runtimes: T) -> &mut Config {
+        self.runtimes = Some(runtimes.as_comma_separated());
         self
     }
-    
 
     /// Run this configuration, compiling the library with all the configured
     /// options.
@@ -495,7 +501,7 @@ impl Config {
         if host != target {
             cmd.arg(format!("--plat={}", plat));
             cmd.arg(format!("--arch={}", arch));
-          
+
             if plat == "android" {
                 if let Ok(ndk) = env::var("ANDROID_NDK_HOME") {
                     cmd.arg(format!("--ndk={}", ndk));
@@ -557,6 +563,10 @@ impl Config {
             };
 
             cmd.arg(runtime);
+        }
+
+        if let Some(runtimes) = &self.runtimes {
+            cmd.arg(format!("--runtimes={}", runtimes));
         }
 
         // Compilation mode: release, debug...
@@ -774,25 +784,25 @@ fn run(cmd: &mut Command, program: &str) -> Option<String> {
     return String::from_utf8(output.stdout).ok();
 }
 
-trait ToVec {
-    fn to_vec(&self) -> Vec<String>;
+trait CommaSeparated {
+    fn as_comma_separated(self) -> String;
 }
 
-impl ToVec for String {
-    fn to_vec(&self) -> Vec<String> {
-        vec![self.clone()]
+impl CommaSeparated for Vec<String> {
+    fn as_comma_separated(self) -> String {
+        self.join(",")
     }
 }
 
-impl ToVec for Vec<String> {
-    fn to_vec(&self) -> Vec<String> {
-        self.clone()
+impl CommaSeparated for String {
+    fn as_comma_separated(self) -> String {
+        self
     }
 }
 
-impl ToVec for &str {
-    fn to_vec(&self) -> Vec<String> {
-        vec![self.to_string()]
+impl CommaSeparated for &str {
+    fn as_comma_separated(self) -> String {
+        self.to_string()
     }
 }
 
@@ -809,7 +819,7 @@ fn parse_info_pairs<T: AsRef<str>>(s: T) -> HashMap<String, Vec<String>> {
 
     for l in str.lines() {
         // Split between key values
-        if let Some((key,values)) =l.split_once(":") {
+        if let Some((key, values)) = l.split_once(":") {
             let v: Vec<_> = values
                 .split('|')
                 .map(|x| x.to_string())
@@ -838,9 +848,9 @@ trait ParseField<T> {
 }
 
 // Only implement for types that implement DirectParse
-impl<T> ParseField<T> for T 
+impl<T> ParseField<T> for T
 where
-    T: FromStr + DirectParse
+    T: FromStr + DirectParse,
 {
     fn parse_field(map: &HashMap<String, Vec<String>>, field: &str) -> Result<T, ParsingError> {
         let values = map.get(field).ok_or(ParsingError::MissingKey)?;
@@ -859,9 +869,12 @@ where
 // Vector implementation remains unchanged
 impl<T> ParseField<Vec<T>> for Vec<T>
 where
-    T: FromStr
+    T: FromStr,
 {
-    fn parse_field(map: &HashMap<String, Vec<String>>, field: &str) -> Result<Vec<T>, ParsingError> {
+    fn parse_field(
+        map: &HashMap<String, Vec<String>>,
+        field: &str,
+    ) -> Result<Vec<T>, ParsingError> {
         let values = map.get(field).ok_or(ParsingError::MissingKey)?;
         values
             .iter()
@@ -870,10 +883,7 @@ where
     }
 }
 
-fn parse_field<T>(
-    map: &HashMap<String, Vec<String>>,
-    field: &str,
-) -> Result<T, ParsingError>
+fn parse_field<T>(map: &HashMap<String, Vec<String>>, field: &str) -> Result<T, ParsingError>
 where
     T: ParseField<T>,
 {
@@ -916,7 +926,7 @@ mod tests {
         let map = parse_info_pairs("key:value1|value2|value3");
         let build_info: Result<String, _> = parse_field(&map, "key");
         assert!(map.contains_key("key"));
-        assert!(build_info.is_err()); 
+        assert!(build_info.is_err());
         assert_eq!(build_info.err().unwrap(), ParsingError::MultipleValues);
     }
 
