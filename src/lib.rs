@@ -183,25 +183,14 @@ impl FromStr for BuildInfo {
     type Err = ParsingError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        const LIBRARY_FIELD: &str = "links";
-        const DIRECTORY_FIELD: &str = "linkdirs";
-        const CXX_FIELD: &str = "cxx_used";
-        const STL_FIELD: &str = "stl_used";
+        let map = parse_info_pairs(s);
 
-        let mut map = parse_info_pairs(s);
+        let directories = parse_field::<Vec<String>>(&map, "linkdirs")?;
+        let links = parse_field::<Vec<Link>>(&map, "links")?;
 
-        let keys = vec![LIBRARY_FIELD, DIRECTORY_FIELD, CXX_FIELD, STL_FIELD];
-        for key in keys {
-            if !map.contains_key(key) {
-                return Err(ParsingError::MissingKey);
-            }
-        }
-
-        let directories = parse_field::<Vec<String>>(&map, DIRECTORY_FIELD)?;
-        let use_cxx = parse_field::<bool>(&map, CXX_FIELD)?;
-        let use_stl = parse_field::<bool>(&map, STL_FIELD)?;
-        let links = parse_field::<Vec<Link>>(&map, LIBRARY_FIELD)?;
-
+        let use_cxx = parse_field::<bool>(&map, "cxx_used")?;
+        let use_stl = parse_field::<bool>(&map, "stl_used")?;
+    
         Ok(BuildInfo {
             directories: directories,
             links: links,
