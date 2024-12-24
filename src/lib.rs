@@ -47,6 +47,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::str::FromStr;
 
+// The version of xmake that is required for this crate to work.
+// https://github.com/xmake-io/xmake/wiki/Xmake-v2.8.7-released
+const XMAKE_MINIMUM_VERSION: Version = Version::new(2, 8, 7);
+
 /// Represents the different kinds of linkage for a library.
 ///
 /// The `LinkKind` enum represents the different ways a library can be linked:
@@ -446,6 +450,8 @@ impl Config {
     // Run the configuration with all the configured
     /// options.
     fn config(&mut self) {
+        self.check_version();
+
         let mut cmd = self.xmake_command();
         cmd.arg("config");
 
@@ -730,6 +736,23 @@ impl Config {
         }
     }
 
+
+    fn check_version(&mut self) {
+        let version = Version::from_command(self.xmake_executable().as_str());
+        if version.is_none() {
+            println!("cargo:warning=xmake version could not be determined, it might not work");
+            return;
+        }
+
+        let version = version.unwrap();
+        if version < XMAKE_MINIMUM_VERSION {
+            panic!(
+                "xmake version {:?} is too old, please update to at least {:?}",
+                version, XMAKE_MINIMUM_VERSION
+            );
+        }
+    }
+
     fn xmake_command(&mut self) -> Command {
         let mut cmd = Command::new(self.xmake_executable());
         cmd.current_dir(self.path.as_path());
@@ -899,6 +922,61 @@ fn getenv_unwrap(v: &str) -> String {
 
 fn fail(s: &str) -> ! {
     panic!("\n{}\n\nbuild script failed, must exit now", s)
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct Version {
+    major: u32,
+    minor: u32,
+    patch: u32,
+}
+
+impl Version {
+    const fn new(major: u32, minor: u32, patch: u32) -> Self {
+        Self {
+            major,
+            minor,
+            patch,
+        }
+    }
+
+    fn parse(s: &str) -> Option<Self> {
+        // As of v2.9.5, the format of the version output is "xmake v2.9.5+dev.478972cd9, A cross-platform build utility based on Lua".
+        // ```
+        // $ xmake --version
+        // Copyright (C) 2015-present Ruki Wang, tboox.org, xmake.io
+        //                         _
+        //    __  ___ __  __  __ _| | ______
+        //    \ \/ / |  \/  |/ _  | |/ / __ \
+        //     >  <  | \__/ | /_| |   <  ___/
+        //    /_/\_\_|_|  |_|\__ \|_|\_\____|
+        //                          by ruki, xmake.io
+        //
+        //     point_right  Manual: https://xmake.io/#/getting_started
+        //     pray  Donate: https://xmake.io/#/sponsor
+        // ```
+        let version = s.lines().next()?.strip_prefix("xmake v")?;
+        let mut parts = version.splitn(2, '+'); // split at the '+' to separate the version and commit
+
+        let version_part = parts.next()?;
+        // Get commit and branch
+        // let commit_part = parts.next().unwrap_or(""); // if there's no commit part, use an empty string
+        // let mut commit_parts = commit_part.splitn(2, '.'); // split commit part to get branch and commit hash
+        // let branch = commit_parts.next().unwrap_or("");
+        // let commit = commit_parts.next().unwrap_or("");
+
+        let mut digits = version_part.splitn(3, '.');
+        let major = digits.next()?.parse::<u32>().ok()?;
+        let minor = digits.next()?.parse::<u32>().ok()?;
+        let patch = digits.next()?.parse::<u32>().ok()?;
+
+        Some(Version::new(major, minor, patch))
+    }
+
+    fn from_command(executable: &str) -> Option<Self> {
+        let output = run(Command::new(executable).arg("--version"), "xmake")?;
+        Self::parse(output.as_str())
+    }
 }
 
 #[cfg(test)]
