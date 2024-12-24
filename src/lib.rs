@@ -85,7 +85,7 @@ pub struct Link {
 #[derive(Default)]
 pub struct BuildInfo {
     /// The directories that contain the linked libraries.
-    directories: Vec<String>,
+    linkdirs: Vec<String>,
     /// The individual linked libraries.
     links: Vec<Link>,
     /// Whether the build uses the C++.
@@ -130,8 +130,8 @@ impl Link {
 
 impl BuildInfo {
     /// Returns the directories that contain the linked libraries.
-    pub fn directories(&self) -> &[String] {
-        &self.directories
+    pub fn linkdirs(&self) -> &[String] {
+        &self.linkdirs
     }
 
     /// Returns the individual linked libraries.
@@ -152,7 +152,6 @@ impl BuildInfo {
 
 impl FromStr for LinkKind {
     type Err = ParsingError;
-
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "static" => Ok(LinkKind::Static),
@@ -185,7 +184,6 @@ impl FromStr for Link {
 
 impl FromStr for BuildInfo {
     type Err = ParsingError;
-
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let map = parse_info_pairs(s);
 
@@ -196,7 +194,7 @@ impl FromStr for BuildInfo {
         let use_stl = parse_field::<bool>(&map, "stl_used")?;
 
         Ok(BuildInfo {
-            directories: directories,
+            linkdirs: directories,
             links: links,
             use_cxx: use_cxx,
             use_stl: use_stl,
@@ -420,7 +418,7 @@ impl Config {
         if self.auto_link {
             let build_info = &self.cache.build_info;
 
-            for directory in build_info.directories() {
+            for directory in build_info.linkdirs() {
                 // Reference: https://doc.rust-lang.org/cargo/reference/build-scripts.html#rustc-link-search
                 println!("cargo:rustc-link-search=native={}", directory);
                 println!("cargo:rustc-link-search=framework={}", directory);
@@ -1064,7 +1062,7 @@ mod tests {
         let build_info: BuildInfo = s.parse().unwrap();
 
         assert_eq!(build_info.links(), &expected_links);
-        assert_eq!(build_info.directories(), &expected_directories);
+        assert_eq!(build_info.linkdirs(), &expected_directories);
         assert_eq!(build_info.use_cxx(), expected_cxx);
         assert_eq!(build_info.use_stl(), expected_stl);
     }
