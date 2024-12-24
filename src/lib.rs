@@ -236,6 +236,7 @@ pub struct Config {
     env: Vec<(String, String)>,
     static_crt: Option<bool>,
     runtimes: Option<String>,
+    nolink_cpp_stdlib: bool,
     cpp_link_stdlib: Option<String>,
     cache: ConfigCache,
 }
@@ -275,6 +276,7 @@ impl Config {
             env: Vec::new(),
             static_crt: None,
             runtimes: None,
+            nolink_cpp_stdlib: true,
             cpp_link_stdlib: None,
             cache: ConfigCache::default(),
         }
@@ -299,6 +301,15 @@ impl Config {
     /// This option defaults to `true`.
     pub fn auto_link(&mut self, value: bool) -> &mut Config {
         self.auto_link = value;
+        self
+    }
+
+    /// Configures if the C++ standard library should be linked.
+    ///
+    /// This option defaults to `true`. 
+    /// If false and no rutimes options is set, the runtime flag pass to xmake configuration will be not set all all. 
+    pub fn nolink_cpp_stdlib(&mut self, value: bool) -> &mut Config {
+        self.nolink_cpp_stdlib = value;
         self
     }
 
@@ -551,7 +562,9 @@ impl Config {
             cmd.arg(format!("--plat={}", plat));
         }
 
-        if plat == "windows" {
+        if let Some(runtimes) = &self.runtimes {
+            cmd.arg(format!("--runtimes={}", runtimes));
+        } else if self.nolink_cpp_stdlib {
             // Static CRT
             let static_crt = self.static_crt.unwrap_or_else(|| self.get_static_crt());
             let debug = match self.get_mode() {
@@ -561,16 +574,11 @@ impl Config {
                 _ => "",
             };
 
-            let runtime = match static_crt {
-                true => format!("--runtimes=MT{}", debug),
-                false => format!("--runtimes=MD{}", debug),
+            let msvc_runtime = match static_crt {
+                true => format!("MT{}", debug),
+                false => format!("MD{}", debug),
             };
-
-            cmd.arg(runtime);
-        }
-
-        if let Some(runtimes) = &self.runtimes {
-            cmd.arg(format!("--runtimes={}", runtimes));
+            cmd.arg(format!("--runtimes={},stdc++_static", msvc_runtime));
         }
 
         // Compilation mode: release, debug...
@@ -733,7 +741,6 @@ impl Config {
             }
         }
     }
-
 
     fn check_version(&mut self) {
         let version = Version::from_command(self.xmake_executable().as_str());
