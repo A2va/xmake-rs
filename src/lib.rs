@@ -237,6 +237,7 @@ pub struct Config {
     static_crt: Option<bool>,
     runtimes: Option<String>,
     nolink_cpp_stdlib: bool,
+    no_stl_link: bool,
     cpp_link_stdlib: Option<String>,
     cache: ConfigCache,
 }
@@ -276,7 +277,7 @@ impl Config {
             env: Vec::new(),
             static_crt: None,
             runtimes: None,
-            nolink_cpp_stdlib: true,
+            no_stl_link: true,
             cpp_link_stdlib: None,
             cache: ConfigCache::default(),
         }
@@ -297,7 +298,7 @@ impl Config {
     }
 
     /// Configures if targets and their dependencies should be linked.
-    ///
+    /// <div class="warning">Without configuring `no_stl_link`, the C++ standard library will be linked, if used in the project. </div>
     /// This option defaults to `true`.
     pub fn auto_link(&mut self, value: bool) -> &mut Config {
         self.auto_link = value;
@@ -306,10 +307,10 @@ impl Config {
 
     /// Configures if the C++ standard library should be linked.
     ///
-    /// This option defaults to `true`. 
-    /// If false and no rutimes options is set, the runtime flag pass to xmake configuration will be not set all all. 
-    pub fn nolink_cpp_stdlib(&mut self, value: bool) -> &mut Config {
-        self.nolink_cpp_stdlib = value;
+    /// This option defaults to `true`.
+    /// If false and no runtimes options is set, the runtime flag passed to xmake configuration will be not set at all.
+    pub fn no_stl_link(&mut self, value: bool) -> &mut Config {
+        self.no_stl_link = value;
         self
     }
 
@@ -384,8 +385,14 @@ impl Config {
     /// will be used to determine the appropriate C++ standard library to link
     /// against.
     /// Common values:
+    /// - `MT`
+    /// - `MTd`
+    /// - `MD`
+    /// - `MDd`
     /// - `c++_static`
     /// - `c++_shared`
+    /// - `stdc++_static`
+    /// - `stdc++_shared`
     /// - `gnustl_static`
     /// - `gnustl_shared`
     /// - `stlport_shared`
@@ -449,6 +456,62 @@ impl Config {
                     }
                     // Let try cargo handle the rest
                     LinkKind::Unknown => println!("cargo:rustc-link-lib={}", link.name()),
+                }
+            }
+
+            if !self.no_stl_link && self.build_info().use_stl() {
+                if let Some(runtimes) = &self.runtimes {
+                    let plat = self.cache.plat();
+
+                    let stl: Option<&[&str]> = match plat.as_str() {
+                        "linux" => {
+                            Some(&["c++_static", "c++_shared", "stdc++_static", "stdc++_shared"])
+                        }
+                        "android" => Some(&[
+                            "c++_static",
+                            "c++_shared",
+                            "gnustl_static",
+                            "gnustl_shared",
+                            "stlport_static",
+                            "stlport_shared",
+                        ]),
+                        _ => None,
+                    };
+
+                    if let Some(stl) = stl {
+                        // Try to match the selected runtime with the available runtimes
+                        for runtime in runtimes.split(",") {
+                            if stl.contains(&runtime) {
+                                let (name, _) = runtime.split_once("_").unwrap();
+                                let kind = match runtime.contains("static") {
+                                    true => "static",
+                                    false => "dylib",
+                                };
+                                println!(r"cargo:rustc-link-lib={}={}", kind, name);
+                                break;
+                            }
+                        }
+                    }
+                } else {
+                    // These runtimes may not be the most appropriate for each platform, but
+                    // taken the GNU standard libary is the most common one on linux, and same for
+                    // the clang equivalent on windows.
+                    // TODO Explore which runtimes is more approriate for macosx
+                    let runtime: Option<&str> = match self.cache.plat().as_str() {
+                        "linux" => Some("stdc++"),
+                        "android" => Some("c++"),
+                        _ => None,
+                    };
+
+                    if let Some(runtime) = runtime {
+                        // Use the kind of crt as a reference
+                        let kind = match self.get_static_crt() {
+                            true => "static",
+                            false => "dylib",
+                        };
+                        println!(r"cargo:rustc-link-lib={}={}", kind, runtime);
+                    }
+
                 }
             }
         }
@@ -564,7 +627,7 @@ impl Config {
 
         if let Some(runtimes) = &self.runtimes {
             cmd.arg(format!("--runtimes={}", runtimes));
-        } else if self.nolink_cpp_stdlib {
+        } else if self.no_stl_link {
             // Static CRT
             let static_crt = self.static_crt.unwrap_or_else(|| self.get_static_crt());
             let debug = match self.get_mode() {
