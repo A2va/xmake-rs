@@ -236,7 +236,6 @@ pub struct Config {
     env: Vec<(String, String)>,
     static_crt: Option<bool>,
     runtimes: Option<String>,
-    nolink_cpp_stdlib: bool,
     no_stl_link: bool,
     cpp_link_stdlib: Option<String>,
     cache: ConfigCache,
