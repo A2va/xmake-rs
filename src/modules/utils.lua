@@ -95,12 +95,14 @@ function _get_available_targets(opt)
             goto continue
         end
 
+        local name = get_namespace_target(target)
+
         local deps = target:get("deps")
         for _, dep in ipairs(deps) do
-            gh:add_edge(target:name(), dep)
+            gh:add_edge(name, dep)
         end
         if not deps then
-            set:insert(target:name())
+            set:insert(name)
         end
 
         ::continue::
@@ -168,6 +170,15 @@ function get_from_target(target, name, scope)
     return table.wrap(result)
 end
 
+-- get the the true target name with namespace
+function get_namespace_target(target)
+    local name = target:name()
+    if is_namespace_supported() and target:namespace() then
+        name = target:namespace() .. "::" .. name
+    end
+    return name
+end
+
 --- check if the given target uses the C++ standard library (STL) based on the provided include directories.
 ---  opt.strict:  if true, the include directory must exactly match the STL include directory
 function is_stl_used(target, includes, opt)
@@ -191,4 +202,17 @@ function is_stl_used(target, includes, opt)
     end
 
     return std_used
+end
+
+-- check if namespace are supported
+function is_namespace_supported()
+    local is_supported = _g.is_namespace_supported
+    if is_supported == nil then
+        -- FIXME
+        local compatibility_version = project.policy("compatibility.version")
+        -- local is_namespace_supported = xmake.version():ge("3.0.0") or (project.policy("compatibility.version") == "3.0" and xmake.version():satisfies(">= 2.9.8 < 3.0.0"))
+        is_supported = true
+        _g.is_namespace_supported = is_supported
+    end
+    return is_supported
 end

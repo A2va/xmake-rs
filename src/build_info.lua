@@ -228,7 +228,6 @@ function _find_kind(link, linkdirs)
     return lib.kind
 end
 
-
 function _get_links(target)
     local linkdirs = _get_linkdirs(target)
     
@@ -241,7 +240,7 @@ function _get_links(target)
     -- so map the target name to the generated file name
     local filename_map = {}
     for _, target in pairs(project.targets()) do
-        filename_map[path.basename(target:filename())] = target:name()
+        filename_map[path.basename(target:filename())] = utils.get_namespace_target(target)
     end
     local is_target = function(link)
         return filename_map[link] ~= nil
