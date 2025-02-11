@@ -1,0 +1,57 @@
+name: Cross-Platform Tests
+
+on:
+  workflow_dispatch: 
+  pull_request:
+    branches: [ main ]
+  # push:
+  #   branches: [ main ]
+  # pull_request:
+  #   branches: [ main ]
+
+jobs:
+  test:
+    name: Test Suite
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        arch: [x86, x64]
+        include:
+          - os: ubuntu-latest
+            arch: x86
+            rust_target: i686-unknown-linux-gnu
+          - os: ubuntu-latest
+            arch: x64
+            rust_target: x86_64-unknown-linux-gnu
+          - os: windows-latest
+            arch: x86
+            rust_target: i686-pc-windows-msvc
+          - os: windows-latest
+            arch: x64
+            rust_target: x86_64-pc-windows-msvc
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install Rust target
+        run: rustup target add ${{ matrix.rust_target }}
+
+      - name: Install Linux x86 Dependencies
+        if: matrix.os == 'ubuntu-latest' && matrix.arch == 'x86'
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y gcc-multilib
+
+      - name: Run xmake package tests
+        run: cargo test xmake
+
+      - name: Find and run test binaries
+        shell: bash
+        run: |
+          for d in tests/*/ ; do
+            if [ -f "${d}Cargo.toml" ]; then
+              cargo run -p $(basename "$d") --target ${{ matrix.rust_target }}
+            fi
+          done

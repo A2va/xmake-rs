@@ -1,0 +1,37 @@
+name: Cross Compilation
+
+on:
+  workflow_dispatch: 
+  push:
+    branches: [ main ]
+#   pull_request:
+#     branches: [ main ]
+
+jobs:
+  cross-compile:
+    name: Cross Compilation x86 on x64
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            target: i686-unknown-linux-gnu
+          - os: windows-latest
+            target: i686-pc-windows-msvc
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install Rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Install Linux Dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y gcc-multilib
+
+      - name: Cross-compile minimal-example
+        run: cargo build -p minimal-example --target ${{ matrix.target }}
