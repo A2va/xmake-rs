@@ -48,8 +48,10 @@ jobs:
           sudo apt-get install -y gcc-multilib
 
       - name: Run xmake package tests
-        run: cargo test xmake
-
+        run: |
+          cargo test --package xmake
+          cargo test --doc
+        
       - name: Find and run test binaries
         shell: bash
         run: |
