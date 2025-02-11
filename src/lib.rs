@@ -831,6 +831,8 @@ impl Config {
 
         // Set the project dir env for xmake
         cmd.env("XMAKE_PROJECT_DIR", self.path.clone());
+        // To no have the color output
+        cmd.env("XMAKE_THEME", "plain");
         cmd
     }
 
@@ -1041,7 +1043,7 @@ impl Version {
     }
 
     fn from_command(executable: &str) -> Option<Self> {
-        let output = run(Command::new(executable).arg("--version"), "xmake")?;
+        let output = run(Command::new(executable).arg("--version").env("XMAKE_THEME", "plain"), "xmake")?;
         Self::parse(output.as_str())
     }
 }
@@ -1097,8 +1099,8 @@ mod tests {
         let build_info: Result<BuildInfo, _> = s.parse();
         assert!(build_info.is_err());
 
-        // For now the returned error is not MalformedLink because map_err is parse_field shallow
-        // all the errors are converted to ParsingError::ParseError
+        // For now the returned error is not MalformedLink because map_err in parse_field shallow
+        // all the errors which are converted to ParsingError::ParseError
         // assert_eq!(build_info.err().unwrap(), ParsingError::MalformedLink);
     }
 
