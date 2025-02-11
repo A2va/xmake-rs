@@ -99,7 +99,7 @@ function _print_infos(infos)
             v  = table.concat(v, "|")
         end
 
-        print(k .. ":" .. v)
+        print(k .. ":" .. tostring(v))
     end
 end
 
@@ -184,7 +184,12 @@ end
 function _get_linkdirs(target, opt)
     local opt = opt or {}
 
-    local linkdirs = utils.get_from_target(target, "linkdirs", "*")
+    local linkdirs = table.imap(utils.get_from_target(target, "linkdirs", "*"), function(index, linkdir)
+        if not path.is_absolute(linkdir) then
+            linkdir = path.absolute(linkdir, os.projectdir())
+        end
+        return linkdir
+    end)
     linkdirs = hashset.from(linkdirs)
     local envs = target:pkgenvs()
 
@@ -445,5 +450,6 @@ function main()
     local infos = _link_info(targets, {recheck = recheck})
     table.join2(infos, _stl_info(targets, {recheck = recheck}))
 
-    print(infos)
+    -- print(infos)
+    _print_infos(infos)
 end
