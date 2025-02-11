@@ -437,8 +437,7 @@ impl Config {
 
             for directory in build_info.linkdirs() {
                 // Reference: https://doc.rust-lang.org/cargo/reference/build-scripts.html#rustc-link-search
-                println!("cargo:rustc-link-search=native={}", directory);
-                println!("cargo:rustc-link-search=framework={}", directory);
+                println!("cargo:rustc-link-search=all={}", directory);
             }
 
             for link in build_info.links() {
