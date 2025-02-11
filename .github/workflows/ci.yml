@@ -1,12 +1,10 @@
-name: Cross-Platform Tests
+name: Tests Suite
 
 on:
   workflow_dispatch: 
   pull_request:
     branches: [ main ]
   # push:
-  #   branches: [ main ]
-  # pull_request:
   #   branches: [ main ]
 
 jobs:
@@ -33,6 +31,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
+
+      - name: Setup xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: branch@dev
 
       - name: Install Rust target
         run: rustup target add ${{ matrix.rust_target }}
