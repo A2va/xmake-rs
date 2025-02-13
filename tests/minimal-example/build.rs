@@ -1,5 +1,3 @@
-use std::path;
-
 extern crate xmake;
 
 fn main() {
