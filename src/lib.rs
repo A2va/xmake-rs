@@ -227,7 +227,7 @@ impl ConfigCache {
 /// Builder style configuration for a pending XMake build.
 pub struct Config {
     path: PathBuf,
-    target: Option<String>,
+    targets: Option<String>,
     verbose: bool,
     auto_link: bool,
     out_dir: Option<PathBuf>,
@@ -267,7 +267,7 @@ impl Config {
     pub fn new<P: AsRef<Path>>(path: P) -> Config {
         Config {
             path: env::current_dir().unwrap().join(path),
-            target: None,
+            targets: None,
             verbose: false,
             auto_link: true,
             out_dir: None,
@@ -282,11 +282,18 @@ impl Config {
         }
     }
 
-    /// Sets the xmake target for this compilation.
+    /// Sets the xmake targets for this compilation.
     /// Note that is different from rust target (os and arch), an xmake target
     /// can be binary or a library.
-    pub fn target(&mut self, target: &str) -> &mut Config {
-        self.target = Some(target.to_string());
+    /// ```
+    /// use xmake::Config;
+    /// let mut config = xmake::Config::new("libfoo");
+    /// config.target("foo");
+    /// config.target("foo,bar");
+    /// config.target(["foo", "bar"]); // You can also pass a Vec<String> or Vec<&str>
+    /// ```
+    pub fn targets<T: CommaSeparated>(&mut self, targets: T) -> &mut Config {
+        self.targets = Some(targets.as_comma_separated());
         self
     }
 
@@ -396,6 +403,12 @@ impl Config {
     /// - `gnustl_shared`
     /// - `stlport_shared`
     /// - `stlport_static`
+    /// ```
+    /// use xmake::Config;
+    /// let mut config = xmake::Config::new("libfoo");
+    /// config.runtimes("MT,c++_static");
+    /// config.runtimes(["MT", "c++_static"]); // You can also pass a Vec<String> or Vec<&str>
+    /// ```
     pub fn runtimes<T: CommaSeparated>(&mut self, runtimes: T) -> &mut Config {
         self.runtimes = Some(runtimes.as_comma_separated());
         self
@@ -410,7 +423,7 @@ impl Config {
         self.config();
 
         let mut cmd = self.xmake_command();
-        cmd.arg("build");
+        cmd.arg("lua");
 
         // In case of xmake is waiting to download something
         cmd.arg("--yes");
@@ -418,8 +431,13 @@ impl Config {
             cmd.arg("-v");
         }
 
-        if self.target.is_some() {
-            cmd.arg(self.target.clone().unwrap());
+        // Get absolute path to the crate root
+        let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let script_file = crate_root.join("src").join("build.lua");
+        cmd.arg(script_file);
+
+        if let Some(targets) = &self.targets {
+            cmd.env("XMAKERS_TARGETS", targets);
         }
 
         run(&mut cmd, "xmake");
@@ -679,10 +697,6 @@ impl Config {
             cmd.arg("-v");
         }
 
-        if self.target.is_some() {
-            cmd.arg(self.target.clone().unwrap());
-        }
-
         run(&mut cmd, "xmake");
         dst
     }
@@ -698,6 +712,10 @@ impl Config {
         let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
         let script_file = crate_root.join("src").join("build_info.lua");
         cmd.arg(script_file);
+
+        if let Some(targets) = &self.targets {
+            cmd.env("XMAKERS_TARGETS", targets);
+        }
 
         if let Some(output) = run(&mut cmd, "xmake") {
             return output.parse().ok();
@@ -879,7 +897,19 @@ trait CommaSeparated {
     fn as_comma_separated(self) -> String;
 }
 
+impl<const N: usize> CommaSeparated for [&str; N] {
+    fn as_comma_separated(self) -> String {
+        self.join(",")
+    }
+}
+
 impl CommaSeparated for Vec<String> {
+    fn as_comma_separated(self) -> String {
+        self.join(",")
+    }
+}
+
+impl CommaSeparated for Vec<&str> {
     fn as_comma_separated(self) -> String {
         self.join(",")
     }

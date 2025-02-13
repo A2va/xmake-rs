@@ -452,4 +452,5 @@ function main()
 
     -- print(infos)
     _print_infos(infos)
+    os.cd(oldir)
 end
