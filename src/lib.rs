@@ -288,9 +288,9 @@ impl Config {
     /// ```
     /// use xmake::Config;
     /// let mut config = xmake::Config::new("libfoo");
-    /// config.target("foo");
-    /// config.target("foo,bar");
-    /// config.target(["foo", "bar"]); // You can also pass a Vec<String> or Vec<&str>
+    /// config.targets("foo");
+    /// config.targets("foo,bar");
+    /// config.targets(["foo", "bar"]); // You can also pass a Vec<String> or Vec<&str>
     /// ```
     pub fn targets<T: CommaSeparated>(&mut self, targets: T) -> &mut Config {
         self.targets = Some(targets.as_comma_separated());
