@@ -257,7 +257,7 @@ pub struct Config {
 /// println!("cargo:rustc-link-lib=static=foo");
 /// ```
 ///
-pub fn build<P: AsRef<Path>>(path: P) -> PathBuf {
+pub fn build<P: AsRef<Path>>(path: P) {
     Config::new(path.as_ref()).build()
 }
 
@@ -419,7 +419,7 @@ impl Config {
     ///
     /// This will run both the configuration command as well as the
     /// command to build the library.
-    pub fn build(&mut self) -> PathBuf {
+    pub fn build(&mut self) {
         self.config();
 
         let mut cmd = self.xmake_command();
@@ -531,8 +531,6 @@ impl Config {
                 }
             }
         }
-
-        dst
     }
 
     // Run the configuration with all the configured
