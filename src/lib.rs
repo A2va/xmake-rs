@@ -42,23 +42,203 @@
 
 use std::collections::HashMap;
 use std::env;
-use std::ffi::{OsStr, OsString};
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::str::FromStr;
+
+// The version of xmake that is required for this crate to work.
+// https://github.com/xmake-io/xmake/wiki/Xmake-v2.8.7-released
+const XMAKE_MINIMUM_VERSION: Version = Version::new(2, 8, 7);
+
+/// Represents the different kinds of linkage for a library.
+///
+/// The `LinkKind` enum represents the different ways a library can be linked:
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LinkKind {
+    /// The library is statically linked, meaning its code is included directly in the final binary.
+    Static,
+    /// The library is dynamically linked, meaning the final binary references the library at runtime.
+    Dynamic,
+    /// The library is a system library, meaning it is provided by the operating system and not included in the final binary.
+    System,
+    /// The library is a framework, like [`System`]: self::LinkKind#variant.System it is provided by the operating system but used only on macos.
+    Framework,
+    /// The library is unknown, meaning its kind could not be determined.
+    Unknown,
+}
+
+/// Represents a single linked library.
+///
+/// The `Link` struct contains information about a single linked library, including its name and the kind of linkage.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Link {
+    /// The name of the linked library.
+    name: String,
+    /// The kind of linkage for the library.
+    kind: LinkKind,
+}
+
+/// Represents the link information for a build.
+///
+/// The `BuildLinkInfo` struct contains information about the libraries that are linked in a build, including the directories they are located in and the individual `Link` structs.
+#[derive(Default)]
+pub struct BuildInfo {
+    /// The directories that contain the linked libraries.
+    linkdirs: Vec<String>,
+    /// The individual linked libraries.
+    links: Vec<Link>,
+    /// Whether the build uses the C++.
+    use_cxx: bool,
+    /// Whether the build uses the C++ standard library.
+    use_stl: bool,
+}
+
+/// Represents errors that can occur when parsing a string to it's `BuildInfo` representation.
+#[derive(Debug, PartialEq, Eq)]
+pub enum ParsingError {
+    /// Given kind did not match any of the `LinkKind` variants.
+    InvalidKind,
+    /// Missing at least one key to construct `BuildInfo`.
+    MissingKey,
+    /// Link string is malformed.
+    MalformedLink,
+    /// Multiple values when it's not supposed to
+    MultipleValues,
+    /// Error when converting string a type
+    ParseError,
+}
+
+impl Link {
+    /// Returns the name of the library as a string.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    /// Returns the kind of linkage for the library.
+    pub fn kind(&self) -> &LinkKind {
+        &self.kind
+    }
+
+    /// Creates a new `Link` with the given name and kind.
+    pub fn new(name: &str, kind: LinkKind) -> Link {
+        Link {
+            name: name.to_string(),
+            kind: kind,
+        }
+    }
+}
+
+impl BuildInfo {
+    /// Returns the directories that contain the linked libraries.
+    pub fn linkdirs(&self) -> &[String] {
+        &self.linkdirs
+    }
+
+    /// Returns the individual linked libraries.
+    pub fn links(&self) -> &[Link] {
+        &self.links
+    }
+
+    /// Returns whether the build uses C++.
+    pub fn use_cxx(&self) -> bool {
+        self.use_cxx
+    }
+
+    /// Returns whether the build uses C++ standard library.
+    pub fn use_stl(&self) -> bool {
+        self.use_stl
+    }
+}
+
+impl FromStr for LinkKind {
+    type Err = ParsingError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "static" => Ok(LinkKind::Static),
+            "shared" => Ok(LinkKind::Dynamic),
+            "system" => Ok(LinkKind::System),
+            "framework" => Ok(LinkKind::Framework),
+            "unknown" => Ok(LinkKind::Unknown),
+            _ => Err(ParsingError::InvalidKind),
+        }
+    }
+}
+
+impl FromStr for Link {
+    type Err = ParsingError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        const NUMBER_OF_PARTS: usize = 2;
+
+        let parts: Vec<_> = s.split("/").collect();
+        if parts.len() != NUMBER_OF_PARTS {
+            return Err(ParsingError::MalformedLink);
+        }
+
+        let kind_result: LinkKind = parts[1].parse()?;
+        Ok(Link {
+            name: parts[0].to_string(),
+            kind: kind_result,
+        })
+    }
+}
+
+impl FromStr for BuildInfo {
+    type Err = ParsingError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let map = parse_info_pairs(s);
+
+        let directories = parse_field::<Vec<String>>(&map, "linkdirs")?;
+        let links = parse_field::<Vec<Link>>(&map, "links")?;
+
+        let use_cxx = parse_field::<bool>(&map, "cxx_used")?;
+        let use_stl = parse_field::<bool>(&map, "stl_used")?;
+
+        Ok(BuildInfo {
+            linkdirs: directories,
+            links: links,
+            use_cxx: use_cxx,
+            use_stl: use_stl,
+        })
+    }
+}
+
+#[derive(Default)]
+struct ConfigCache {
+    build_info: BuildInfo,
+    plat: Option<String>,
+    arch: Option<String>,
+    env: HashMap<String, Option<String>>,
+}
+
+impl ConfigCache {
+    /// Returns the platform string for this configuration.
+    /// Panic if the config has not been done yet
+    fn plat(&self) -> &String {
+        return self.plat.as_ref().unwrap();
+    }
+
+    /// Returns the architecture string for this configuration.
+    /// Panic if the config has not been done yet
+    fn arch(&self) -> &String {
+        return self.arch.as_ref().unwrap();
+    }
+}
 
 /// Builder style configuration for a pending XMake build.
 pub struct Config {
     path: PathBuf,
-    target: Option<String>,
+    targets: Option<String>,
     verbose: bool,
+    auto_link: bool,
     out_dir: Option<PathBuf>,
     mode: Option<String>,
-    options: Vec<(OsString, OsString)>,
-    env: Vec<(OsString, OsString)>,
+    options: Vec<(String, String)>,
+    env: Vec<(String, String)>,
     static_crt: Option<bool>,
+    runtimes: Option<String>,
+    no_stl_link: bool,
     cpp_link_stdlib: Option<String>,
-    env_cache: HashMap<String, Option<OsString>>,
+    cache: ConfigCache,
 }
 
 /// Builds the native library rooted at `path` with the default xmake options.
@@ -77,7 +257,7 @@ pub struct Config {
 /// println!("cargo:rustc-link-lib=static=foo");
 /// ```
 ///
-pub fn build<P: AsRef<Path>>(path: P) -> PathBuf {
+pub fn build<P: AsRef<Path>>(path: P) {
     Config::new(path.as_ref()).build()
 }
 
@@ -87,29 +267,56 @@ impl Config {
     pub fn new<P: AsRef<Path>>(path: P) -> Config {
         Config {
             path: env::current_dir().unwrap().join(path),
-            target: None,
+            targets: None,
             verbose: false,
+            auto_link: true,
             out_dir: None,
             mode: None,
             options: Vec::new(),
             env: Vec::new(),
             static_crt: None,
+            runtimes: None,
+            no_stl_link: true,
             cpp_link_stdlib: None,
-            env_cache: HashMap::new(),
+            cache: ConfigCache::default(),
         }
     }
 
-    /// Sets the xmake target for this compilation.
+    /// Sets the xmake targets for this compilation.
     /// Note that is different from rust target (os and arch), an xmake target
     /// can be binary or a library.
-    pub fn target(&mut self, target: &str) -> &mut Config {
-        self.target = Some(target.to_string());
+    /// ```
+    /// use xmake::Config;
+    /// let mut config = xmake::Config::new("libfoo");
+    /// config.targets("foo");
+    /// config.targets("foo,bar");
+    /// config.targets(["foo", "bar"]); // You can also pass a Vec<String> or Vec<&str>
+    /// ```
+    pub fn targets<T: CommaSeparated>(&mut self, targets: T) -> &mut Config {
+        self.targets = Some(targets.as_comma_separated());
         self
     }
 
     /// Sets verbose output.
     pub fn verbose(&mut self, value: bool) -> &mut Config {
         self.verbose = value;
+        self
+    }
+
+    /// Configures if targets and their dependencies should be linked.
+    /// <div class="warning">Without configuring `no_stl_link`, the C++ standard library will be linked, if used in the project. </div>
+    /// This option defaults to `true`.
+    pub fn auto_link(&mut self, value: bool) -> &mut Config {
+        self.auto_link = value;
+        self
+    }
+
+    /// Configures if the C++ standard library should be linked.
+    ///
+    /// This option defaults to `true`.
+    /// If false and no runtimes options is set, the runtime flag passed to xmake configuration will be not set at all.
+    pub fn no_stl_link(&mut self, value: bool) -> &mut Config {
+        self.no_stl_link = value;
         self
     }
 
@@ -132,8 +339,8 @@ impl Config {
     /// this crate in the `build` step.
     pub fn option<K, V>(&mut self, key: K, value: V) -> &mut Config
     where
-        K: AsRef<OsStr>,
-        V: AsRef<OsStr>,
+        K: AsRef<str>,
+        V: AsRef<str>,
     {
         self.options
             .push((key.as_ref().to_owned(), value.as_ref().to_owned()));
@@ -144,8 +351,8 @@ impl Config {
     /// this crate in the `build` step.
     pub fn env<K, V>(&mut self, key: K, value: V) -> &mut Config
     where
-        K: AsRef<OsStr>,
-        V: AsRef<OsStr>,
+        K: AsRef<str>,
+        V: AsRef<str>,
     {
         self.env
             .push((key.as_ref().to_owned(), value.as_ref().to_owned()));
@@ -177,16 +384,46 @@ impl Config {
         self
     }
 
+    /// Sets the runtimes to use for this compilation.
+    ///
+    /// This method takes a collection of runtime names, which will be passed to
+    /// the `xmake` command during the build process. The runtimes specified here
+    /// will be used to determine the appropriate C++ standard library to link
+    /// against.
+    /// Common values:
+    /// - `MT`
+    /// - `MTd`
+    /// - `MD`
+    /// - `MDd`
+    /// - `c++_static`
+    /// - `c++_shared`
+    /// - `stdc++_static`
+    /// - `stdc++_shared`
+    /// - `gnustl_static`
+    /// - `gnustl_shared`
+    /// - `stlport_shared`
+    /// - `stlport_static`
+    /// ```
+    /// use xmake::Config;
+    /// let mut config = xmake::Config::new("libfoo");
+    /// config.runtimes("MT,c++_static");
+    /// config.runtimes(["MT", "c++_static"]); // You can also pass a Vec<String> or Vec<&str>
+    /// ```
+    pub fn runtimes<T: CommaSeparated>(&mut self, runtimes: T) -> &mut Config {
+        self.runtimes = Some(runtimes.as_comma_separated());
+        self
+    }
+
     /// Run this configuration, compiling the library with all the configured
     /// options.
     ///
     /// This will run both the configuration command as well as the
     /// command to build the library.
-    pub fn build(&mut self) -> PathBuf {
+    pub fn build(&mut self) {
         self.config();
 
         let mut cmd = self.xmake_command();
-        cmd.arg("build");
+        cmd.arg("lua");
 
         // In case of xmake is waiting to download something
         cmd.arg("--yes");
@@ -194,8 +431,13 @@ impl Config {
             cmd.arg("-v");
         }
 
-        if self.target.is_some() {
-            cmd.arg(self.target.clone().unwrap());
+        // Get absolute path to the crate root
+        let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let script_file = crate_root.join("src").join("build.lua");
+        cmd.arg(script_file);
+
+        if let Some(targets) = &self.targets {
+            cmd.env("XMAKERS_TARGETS", targets);
         }
 
         run(&mut cmd, "xmake");
@@ -204,12 +446,98 @@ impl Config {
         let dst = self.install().join("lib");
         println!("cargo:root={}", dst.display());
 
-        dst
+        if let Some(info) = self.get_build_info() {
+            self.cache.build_info = info;
+        }
+
+        if self.auto_link {
+            let build_info = &self.cache.build_info;
+
+            for directory in build_info.linkdirs() {
+                // Reference: https://doc.rust-lang.org/cargo/reference/build-scripts.html#rustc-link-search
+                println!("cargo:rustc-link-search=all={}", directory);
+            }
+
+            for link in build_info.links() {
+                match link.kind() {
+                    LinkKind::Static => println!("cargo:rustc-link-lib=static={}", link.name()),
+                    LinkKind::Dynamic => println!("cargo:rustc-link-lib=dylib={}", link.name()),
+                    LinkKind::Framework if self.cache.plat() == "macosx" => {
+                        println!("cargo:rustc-link-lib=framework={}", link.name())
+                    }
+                    // For rust, framework type is only for macosx but can be used on multiple system in xmake
+                    // so fallback to the system libraries case
+                    LinkKind::System | LinkKind::Framework => {
+                        println!("cargo:rustc-link-lib={}", link.name())
+                    }
+                    // Let try cargo handle the rest
+                    LinkKind::Unknown => println!("cargo:rustc-link-lib={}", link.name()),
+                }
+            }
+
+            if !self.no_stl_link && self.build_info().use_stl() {
+                if let Some(runtimes) = &self.runtimes {
+                    let plat = self.cache.plat();
+
+                    let stl: Option<&[&str]> = match plat.as_str() {
+                        "linux" => {
+                            Some(&["c++_static", "c++_shared", "stdc++_static", "stdc++_shared"])
+                        }
+                        "android" => Some(&[
+                            "c++_static",
+                            "c++_shared",
+                            "gnustl_static",
+                            "gnustl_shared",
+                            "stlport_static",
+                            "stlport_shared",
+                        ]),
+                        _ => None,
+                    };
+
+                    if let Some(stl) = stl {
+                        // Try to match the selected runtime with the available runtimes
+                        for runtime in runtimes.split(",") {
+                            if stl.contains(&runtime) {
+                                let (name, _) = runtime.split_once("_").unwrap();
+                                let kind = match runtime.contains("static") {
+                                    true => "static",
+                                    false => "dylib",
+                                };
+                                println!(r"cargo:rustc-link-lib={}={}", kind, name);
+                                break;
+                            }
+                        }
+                    }
+                } else {
+                    // These runtimes may not be the most appropriate for each platform, but
+                    // taken the GNU standard libary is the most common one on linux, and same for
+                    // the clang equivalent on windows.
+                    // TODO Explore which runtimes is more approriate for macosx
+                    let runtime: Option<&str> = match self.cache.plat().as_str() {
+                        "linux" => Some("stdc++"),
+                        "android" => Some("c++"),
+                        _ => None,
+                    };
+
+                    if let Some(runtime) = runtime {
+                        // Use the kind of crt as a reference
+                        let kind = match self.get_static_crt() {
+                            true => "static",
+                            false => "dylib",
+                        };
+                        println!(r"cargo:rustc-link-lib={}={}", kind, runtime);
+                    }
+
+                }
+            }
+        }
     }
 
     // Run the configuration with all the configured
     /// options.
     fn config(&mut self) {
+        self.check_version();
+
         let mut cmd = self.xmake_command();
         cmd.arg("config");
 
@@ -231,42 +559,40 @@ impl Config {
         let host = getenv_unwrap("HOST");
         let target = getenv_unwrap("TARGET");
 
-        // List of xmake platform https://github.com/xmake-io/xmake/tree/master/xmake/platforms
         let os = getenv_unwrap("CARGO_CFG_TARGET_OS");
-        let plat = match self.get_xmake_plat(os.clone()) {
-            Some(p) => p,
-            None => panic!("unsupported rust target: {}", os),
-        };
+
+        // Convert rust platform and arch to xmake
+        let plat = self
+            .get_xmake_plat(os.clone())
+            .expect("unsupported rust target");
+
+        let arch = match (
+            plat.as_str(),
+            getenv_unwrap("CARGO_CFG_TARGET_ARCH").as_str(),
+        ) {
+            ("android", a) if os == "androideabi" => match a {
+                "arm" => "armeabi", // TODO Check with cc-rs if it's true
+                "armv7" => "armeabi-v7a",
+                a => a,
+            },
+            ("android", "aarch64") => "arm64-v8a",
+            ("android", "i686") => "x86",
+            ("appletvos", "aarch64") => "arm64",
+            ("watchos", "arm64_32") => "armv7k",
+            ("watchos", "armv7k") => "armv7k",
+            ("iphoneos", "aarch64") => "arm64",
+            ("macosx", "aarch64") => "arm64",
+            ("windows", "i686") => "x86",
+            ("wasm", _) => "wasm32",
+            (_, "aarch64") => "arm64",
+            (_, "i686") => "i386",
+            (_, a) => a,
+        }
+        .to_string();
 
         if host != target {
-            let arch = match (
-                plat.as_str(),
-                getenv_unwrap("CARGO_CFG_TARGET_ARCH").as_str(),
-            ) {
-                ("android", a) if os == "androideabi" => match a {
-                    "arm" => "armeabi", // TODO Check with cc-rs if it's true
-                    "armv7" => "armeabi-v7a",
-                    a => a,
-                },
-                ("android", "aarch64") => "arm64-v8a",
-                ("android", "i686") => "x86",
-                ("appletvos", "aarch64") => "arm64",
-                ("watchos", "arm64_32") => "armv7k",
-                ("watchos", "armv7k") => "armv7k",
-                ("iphoneos", "aarch64") => "arm64",
-                ("macosx", "aarch64") => "arm64",
-                ("windows", "i686") => "x86",
-                ("wasm", _) => "wasm32",
-                (_, "aarch64") => "arm64",
-                (_, "i686") => "i386",
-                (_, a) => a,
-            }
-            .to_string();
-
             cmd.arg(format!("--plat={}", plat));
-            if plat != "cross" {
-                //cmd.arg(format!("--arch={}", arch));
-            }
+            cmd.arg(format!("--arch={}", arch));
 
             if plat == "android" {
                 if let Ok(ndk) = env::var("ANDROID_NDK_HOME") {
@@ -313,7 +639,9 @@ impl Config {
             cmd.arg(format!("--plat={}", plat));
         }
 
-        if plat == "windows" {
+        if let Some(runtimes) = &self.runtimes {
+            cmd.arg(format!("--runtimes={}", runtimes));
+        } else if self.no_stl_link {
             // Static CRT
             let static_crt = self.static_crt.unwrap_or_else(|| self.get_static_crt());
             let debug = match self.get_mode() {
@@ -323,12 +651,11 @@ impl Config {
                 _ => "",
             };
 
-            let runtime = match static_crt {
-                true => format!("--runtimes=MT{}", debug),
-                false => format!("--runtimes=MD{}", debug),
+            let msvc_runtime = match static_crt {
+                true => format!("MT{}", debug),
+                false => format!("MD{}", debug),
             };
-
-            cmd.arg(runtime);
+            cmd.arg(format!("--runtimes={},stdc++_static", msvc_runtime));
         }
 
         // Compilation mode: release, debug...
@@ -337,15 +664,20 @@ impl Config {
 
         // Option
         for (key, val) in self.options.iter() {
-            let option = format!(
-                "--{}={}",
-                key.clone().into_string().unwrap(),
-                val.clone().into_string().unwrap()
-            );
+            let option = format!("--{}={}", key.clone(), val.clone(),);
             cmd.arg(option);
         }
 
         run(&mut cmd, "xmake");
+
+        self.cache.plat = Some(plat);
+        self.cache.arch = Some(arch);
+    }
+
+    /// Returns a reference to the `BuildInfo` associated with this build.
+    /// <div class="warning">Note: Accessing this information before the build step will result in non-representative data.</div>
+    pub fn build_info(&self) -> &BuildInfo {
+        &self.cache.build_info
     }
 
     /// Install target in OUT_DIR.
@@ -363,12 +695,30 @@ impl Config {
             cmd.arg("-v");
         }
 
-        if self.target.is_some() {
-            cmd.arg(self.target.clone().unwrap());
-        }
-
         run(&mut cmd, "xmake");
         dst
+    }
+
+    fn get_build_info(&mut self) -> Option<BuildInfo> {
+        let mut cmd = self.xmake_command();
+        cmd.arg("lua");
+        if self.verbose {
+            cmd.arg("-v");
+        }
+
+        // Get absolute path to the crate root
+        let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let script_file = crate_root.join("src").join("build_info.lua");
+        cmd.arg(script_file);
+
+        if let Some(targets) = &self.targets {
+            cmd.env("XMAKERS_TARGETS", targets);
+        }
+
+        if let Some(output) = run(&mut cmd, "xmake") {
+            return output.parse().ok();
+        }
+        None
     }
 
     fn get_static_crt(&self) -> bool {
@@ -469,6 +819,22 @@ impl Config {
         }
     }
 
+    fn check_version(&mut self) {
+        let version = Version::from_command(self.xmake_executable().as_str());
+        if version.is_none() {
+            println!("cargo:warning=xmake version could not be determined, it might not work");
+            return;
+        }
+
+        let version = version.unwrap();
+        if version < XMAKE_MINIMUM_VERSION {
+            panic!(
+                "xmake version {:?} is too old, please update to at least {:?}",
+                version, XMAKE_MINIMUM_VERSION
+            );
+        }
+    }
+
     fn xmake_command(&mut self) -> Command {
         let mut cmd = Command::new(self.xmake_executable());
         cmd.current_dir(self.path.as_path());
@@ -480,29 +846,32 @@ impl Config {
 
         // Set the project dir env for xmake
         cmd.env("XMAKE_PROJECT_DIR", self.path.clone());
+        // To no have the color output
+        cmd.env("XMAKE_THEME", "plain");
         cmd
     }
 
-    fn xmake_executable(&mut self) -> OsString {
+    fn xmake_executable(&mut self) -> String {
         self.getenv_os("XMAKE")
-            .unwrap_or_else(|| OsString::from("xmake"))
+            .unwrap_or_else(|| String::from("xmake"))
     }
 
-    fn getenv_os(&mut self, v: &str) -> Option<OsString> {
-        if let Some(val) = self.env_cache.get(v) {
+    fn getenv_os(&mut self, v: &str) -> Option<String> {
+        if let Some(val) = self.cache.env.get(v) {
             return val.clone();
         }
-        let r = env::var_os(v);
+
+        let r = env::var(v).ok();
         println!("{} = {:?}", v, r);
-        self.env_cache.insert(v.to_string(), r.clone());
+        self.cache.env.insert(v.to_string(), r.clone());
         r
     }
 }
 
-fn run(cmd: &mut Command, program: &str) {
+fn run(cmd: &mut Command, program: &str) -> Option<String> {
     println!("running: {:?}", cmd);
-    let status = match cmd.status() {
-        Ok(status) => status,
+    let output = match cmd.output() {
+        Ok(out) => out,
         Err(ref e) if e.kind() == ErrorKind::NotFound => {
             fail(&format!(
                 "failed to execute command: {}\nis `{}` not installed?",
@@ -511,12 +880,133 @@ fn run(cmd: &mut Command, program: &str) {
         }
         Err(e) => fail(&format!("failed to execute command: {}", e)),
     };
-    if !status.success() {
+    if !output.status.success() {
+        let stdout = String::from_utf8(output.stdout).ok();
         fail(&format!(
-            "command did not execute successfully, got: {}",
-            status
+            "command did not execute successfully, got: {}\nstdout: {}",
+            output.status,
+            stdout.unwrap_or_default()
         ));
     }
+    return String::from_utf8(output.stdout).ok();
+}
+
+trait CommaSeparated {
+    fn as_comma_separated(self) -> String;
+}
+
+impl<const N: usize> CommaSeparated for [&str; N] {
+    fn as_comma_separated(self) -> String {
+        self.join(",")
+    }
+}
+
+impl CommaSeparated for Vec<String> {
+    fn as_comma_separated(self) -> String {
+        self.join(",")
+    }
+}
+
+impl CommaSeparated for Vec<&str> {
+    fn as_comma_separated(self) -> String {
+        self.join(",")
+    }
+}
+
+impl CommaSeparated for String {
+    fn as_comma_separated(self) -> String {
+        self
+    }
+}
+
+impl CommaSeparated for &str {
+    fn as_comma_separated(self) -> String {
+        self.to_string()
+    }
+}
+
+/// Parses a string representation of a map of key-value pairs, where the values are
+/// separated by the '|' character.
+///
+/// The input string is expected to be in the format "key:value1|value2|...|valueN",
+/// where the values are separated by the '|' character. Any empty values are
+/// filtered out.
+///
+fn parse_info_pairs<T: AsRef<str>>(s: T) -> HashMap<String, Vec<String>> {
+    let str: String = s.as_ref().trim().to_string();
+    let mut map: HashMap<String, Vec<String>> = HashMap::new();
+
+    for l in str.lines() {
+        // Split between key values
+        if let Some((key, values)) = l.split_once(":") {
+            let v: Vec<_> = values
+                .split('|')
+                .map(|x| x.to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+            map.insert(key.to_string(), v);
+        }
+    }
+    map
+}
+
+// This trait may be replaced by the unstable auto trait feature
+// References:
+// https://users.rust-lang.org/t/how-to-exclude-a-type-from-generic-trait-implementation/26156/9
+// https://doc.rust-lang.org/beta/unstable-book/language-features/auto-traits.html
+// https://doc.rust-lang.org/beta/unstable-book/language-features/negative-impls.html
+trait DirectParse {}
+
+// Implement for all primitive types that should use the scalar implementation
+impl DirectParse for bool {}
+impl DirectParse for u32 {}
+impl DirectParse for String {}
+
+trait ParseField<T> {
+    fn parse_field(map: &HashMap<String, Vec<String>>, field: &str) -> Result<T, ParsingError>;
+}
+
+// Only implement for types that implement DirectParse
+impl<T> ParseField<T> for T
+where
+    T: FromStr + DirectParse,
+{
+    fn parse_field(map: &HashMap<String, Vec<String>>, field: &str) -> Result<T, ParsingError> {
+        let values = map.get(field).ok_or(ParsingError::MissingKey)?;
+        if values.len() > 1 {
+            return Err(ParsingError::MultipleValues);
+        }
+
+        let parsed: Vec<T> = values
+            .iter()
+            .map(|s| s.parse::<T>().map_err(|_| ParsingError::ParseError))
+            .collect::<Result<Vec<T>, ParsingError>>()?;
+        parsed.into_iter().next().ok_or(ParsingError::MissingKey)
+    }
+}
+
+// Vector implementation remains unchanged
+impl<T> ParseField<Vec<T>> for Vec<T>
+where
+    T: FromStr,
+{
+    fn parse_field(
+        map: &HashMap<String, Vec<String>>,
+        field: &str,
+    ) -> Result<Vec<T>, ParsingError> {
+        let values = map.get(field).ok_or(ParsingError::MissingKey)?;
+        values
+            .iter()
+            .map(|s| s.parse::<T>().map_err(|_| ParsingError::ParseError))
+            .collect::<Result<Vec<T>, ParsingError>>()
+    }
+}
+
+fn parse_field<T>(map: &HashMap<String, Vec<String>>, field: &str) -> Result<T, ParsingError>
+where
+    T: ParseField<T>,
+{
+    T::parse_field(map, field)
 }
 
 fn getenv_unwrap(v: &str) -> String {
@@ -528,4 +1018,150 @@ fn getenv_unwrap(v: &str) -> String {
 
 fn fail(s: &str) -> ! {
     panic!("\n{}\n\nbuild script failed, must exit now", s)
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct Version {
+    major: u32,
+    minor: u32,
+    patch: u32,
+}
+
+impl Version {
+    const fn new(major: u32, minor: u32, patch: u32) -> Self {
+        Self {
+            major,
+            minor,
+            patch,
+        }
+    }
+
+    fn parse(s: &str) -> Option<Self> {
+        // As of v2.9.5, the format of the version output is "xmake v2.9.5+dev.478972cd9, A cross-platform build utility based on Lua".
+        // ```
+        // $ xmake --version
+        // Copyright (C) 2015-present Ruki Wang, tboox.org, xmake.io
+        //                         _
+        //    __  ___ __  __  __ _| | ______
+        //    \ \/ / |  \/  |/ _  | |/ / __ \
+        //     >  <  | \__/ | /_| |   <  ___/
+        //    /_/\_\_|_|  |_|\__ \|_|\_\____|
+        //                          by ruki, xmake.io
+        //
+        //     point_right  Manual: https://xmake.io/#/getting_started
+        //     pray  Donate: https://xmake.io/#/sponsor
+        // ```
+        let version = s.lines().next()?.strip_prefix("xmake v")?;
+        let mut parts = version.splitn(2, '+'); // split at the '+' to separate the version and commit
+
+        let version_part = parts.next()?;
+        // Get commit and branch
+        // let commit_part = parts.next().unwrap_or(""); // if there's no commit part, use an empty string
+        // let mut commit_parts = commit_part.splitn(2, '.'); // split commit part to get branch and commit hash
+        // let branch = commit_parts.next().unwrap_or("");
+        // let commit = commit_parts.next().unwrap_or("");
+
+        let mut digits = version_part.splitn(3, '.');
+        let major = digits.next()?.parse::<u32>().ok()?;
+        let minor = digits.next()?.parse::<u32>().ok()?;
+        let patch = digits.next()?.parse::<u32>().ok()?;
+
+        Some(Version::new(major, minor, patch))
+    }
+
+    fn from_command(executable: &str) -> Option<Self> {
+        let output = run(Command::new(executable).arg("--version").env("XMAKE_THEME", "plain"), "xmake")?;
+        Self::parse(output.as_str())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{parse_field, parse_info_pairs, BuildInfo, Link, LinkKind, ParsingError};
+
+    #[test]
+    fn parse_line() {
+        let expected_values: Vec<_> = ["value1", "value2", "value3"].map(String::from).to_vec();
+        let map = parse_info_pairs("key:value1|value2|value3");
+        assert!(map.contains_key("key"));
+        assert_eq!(map["key"], expected_values);
+    }
+
+    #[test]
+    fn parse_line_empty_values() {
+        let expected_values: Vec<_> = ["value1", "value2"].map(String::from).to_vec();
+        let map = parse_info_pairs("key:value1||value2");
+        assert!(map.contains_key("key"));
+        assert_eq!(map["key"], expected_values);
+    }
+
+    #[test]
+    fn parse_field_multiple_values() {
+        let map = parse_info_pairs("key:value1|value2|value3");
+        let build_info: Result<String, _> = parse_field(&map, "key");
+        assert!(map.contains_key("key"));
+        assert!(build_info.is_err());
+        assert_eq!(build_info.err().unwrap(), ParsingError::MultipleValues);
+    }
+
+    #[test]
+    fn parse_build_info_missing_key() {
+        let mut s = String::new();
+        s.push_str("linkdirs:path/to/libA|path/to/libB|path\\to\\libC\n");
+        s.push_str("links:linkA/static|linkB/shared\n");
+
+        let build_info: Result<BuildInfo, _> = s.parse();
+        assert!(build_info.is_err());
+        assert_eq!(build_info.err().unwrap(), ParsingError::MissingKey);
+    }
+
+    #[test]
+    fn parse_build_info_missing_kind() {
+        let mut s = String::new();
+        s.push_str("cxx_used:true\n");
+        s.push_str("stl_used:false\n");
+        s.push_str("links:linkA|linkB\n");
+        s.push_str("linkdirs:path/to/libA|path/to/libB|path\\to\\libC\n");
+
+        let build_info: Result<BuildInfo, _> = s.parse();
+        assert!(build_info.is_err());
+
+        // For now the returned error is not MalformedLink because map_err in parse_field shallow
+        // all the errors which are converted to ParsingError::ParseError
+        // assert_eq!(build_info.err().unwrap(), ParsingError::MalformedLink);
+    }
+
+    #[test]
+    fn parse_build_info_missing_info() {
+        let mut s = String::new();
+        s.push_str("links:linkA/static|linkB/shared\n");
+        s.push_str("linkdirs:path/to/libA|path/to/libB|path\\to\\libC\n");
+
+        let build_info: Result<BuildInfo, _> = s.parse();
+        assert!(build_info.is_err());
+    }
+
+    #[test]
+    fn parse_build_info() {
+        let expected_links = [
+            Link::new("linkA", LinkKind::Static),
+            Link::new("linkB", LinkKind::Dynamic),
+        ];
+        let expected_directories = vec!["path/to/libA", "path/to/libB", "path\\to\\libC"];
+        let expected_cxx = true;
+        let expected_stl = false;
+
+        let mut s = String::new();
+        s.push_str("cxx_used:true\n");
+        s.push_str("stl_used:false\n");
+        s.push_str("links:linkA/static|linkB/shared\n");
+        s.push_str("linkdirs:path/to/libA|path/to/libB|path\\to\\libC\n");
+
+        let build_info: BuildInfo = s.parse().unwrap();
+
+        assert_eq!(build_info.links(), &expected_links);
+        assert_eq!(build_info.linkdirs(), &expected_directories);
+        assert_eq!(build_info.use_cxx(), expected_cxx);
+        assert_eq!(build_info.use_stl(), expected_stl);
+    }
 }
