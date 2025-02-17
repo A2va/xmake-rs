@@ -18,5 +18,5 @@ cc = "1.0.72"
 [workspace]
 members = [
     ".",
-    "tests/minimal-example",
+    "tests/basic",
 ]
