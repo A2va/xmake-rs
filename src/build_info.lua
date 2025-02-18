@@ -245,7 +245,9 @@ function _get_links(target)
     -- so map the target name to the generated file name
     local filename_map = {}
     for _, target in pairs(project.targets()) do
-        filename_map[path.basename(target:filename())] = utils.get_namespace_target(target)
+        if target:is_static() or target:is_shared() then
+            filename_map[target:linkname()] = utils.get_namespace_target(target)
+        end
     end
     local is_target = function(link)
         return filename_map[link] ~= nil
