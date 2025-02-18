@@ -208,10 +208,7 @@ end
 function is_namespace_supported()
     local is_supported = _g.is_namespace_supported
     if is_supported == nil then
-        -- FIXME
-        local compatibility_version = project.policy("compatibility.version")
-        -- local is_namespace_supported = xmake.version():ge("3.0.0") or (project.policy("compatibility.version") == "3.0" and xmake.version():satisfies(">= 2.9.8 < 3.0.0"))
-        is_supported = true
+        local is_supported = xmake.version():ge("3.0.0") or (xmake.version():satisfies(">= 2.9.8 < 3.0.0") and (project.policy("compatibility.version") == "3.0"))
         _g.is_namespace_supported = is_supported
     end
     return is_supported

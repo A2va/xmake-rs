@@ -20,23 +20,17 @@
 //! ```no_run
 //! use xmake;
 //!
-//! // Builds the project in the directory located in `libfoo`, installing it
-//! // into $OUT_DIR
-//! let dst = xmake::build("libfoo");
-//!
-//! println!("cargo:rustc-link-search=native={}", dst.display());
-//! println!("cargo:rustc-link-lib=static=foo");
+//! // Builds the project in the directory located in `libfoo`, and link it
+//! xmake::build("libfoo");
 //! ```
 //!
 //! ```no_run
 //! use xmake::Config;
 //!
-//! let dst = Config::new("libfoo")
-//!                 .option("bar", "true")
-//!                 .env("XMAKE", "path/to/xmake")
-//!                 .build();
-//! println!("cargo:rustc-link-search=native={}", dst.display());
-//! println!("cargo:rustc-link-lib=static=foo");
+//! Config::new("libfoo")
+//!        .option("bar", "true")
+//!        .env("XMAKE", "path/to/xmake")
+//!        .build();
 //! ```
 #![deny(missing_docs)]
 
@@ -249,12 +243,8 @@ pub struct Config {
 /// ```no_run
 /// use xmake;
 ///
-/// // Builds the project in the directory located in `libfoo`, installing it
-/// // into $OUT_DIR
-/// let dst = xmake::build("libfoo");
-///
-/// println!("cargo:rustc-link-search=native={}", dst.display());
-/// println!("cargo:rustc-link-lib=static=foo");
+/// // Builds the project in the directory located in `libfoo`, and link it
+/// xmake::build("libfoo");
 /// ```
 ///
 pub fn build<P: AsRef<Path>>(path: P) {
@@ -527,7 +517,6 @@ impl Config {
                         };
                         println!(r"cargo:rustc-link-lib={}={}", kind, runtime);
                     }
-
                 }
             }
         }
@@ -1070,7 +1059,12 @@ impl Version {
     }
 
     fn from_command(executable: &str) -> Option<Self> {
-        let output = run(Command::new(executable).arg("--version").env("XMAKE_THEME", "plain"), "xmake")?;
+        let output = run(
+            Command::new(executable)
+                .arg("--version")
+                .env("XMAKE_THEME", "plain"),
+            "xmake",
+        )?;
         Self::parse(output.as_str())
     }
 }
