@@ -1,5 +1,5 @@
 [package]
-name = "minimal-example"
+name = "basic"
 version = "0.1.0"
 authors = ["A2va"]
 build = "build.rs"

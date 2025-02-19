@@ -1,3 +1,3 @@
 target("libdouble")
     set_kind("static")
-    add_files("double.c")
+    add_files("src/double.c")

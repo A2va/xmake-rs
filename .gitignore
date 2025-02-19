@@ -1,3 +1,9 @@
 /target
 /Cargo.lock
-**/.xmake
+
+
+.xmake/
+build/
+
+.vscode/
+*.lock
