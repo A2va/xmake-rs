@@ -1,5 +1,5 @@
 extern crate xmake;
 
 fn main() {
-    xmake::build("libdouble");
+    xmake::build(".");
 }
