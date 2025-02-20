@@ -19,4 +19,5 @@ cc = "1.0.72"
 members = [
     ".",
     "tests/basic",
+    "tests/basic-namespace",
 ]

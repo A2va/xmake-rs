@@ -74,6 +74,7 @@ function _get_available_targets(opt)
     local set = hashset.new()
 
     local map = function(index, target)
+        print("map target", target)
         return project.target(target)
     end
 
@@ -137,7 +138,7 @@ end
 function get_targets()
     local list = _g.targets_list
     if list == nil then
-        local env = os.getenv("XMAKERS_TARGETS") 
+        local env = os.getenv("XMAKERS_TARGETS")
         local values = (env ~= "") and env or nil
         if values then
             values = string.gsub(values, "//", "::")

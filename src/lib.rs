@@ -427,7 +427,9 @@ impl Config {
         cmd.arg(script_file);
 
         if let Some(targets) = &self.targets {
-            cmd.env("XMAKERS_TARGETS", targets);
+            // :: is used to handle namespaces for xmake but it interferes with the env separator
+            // on linux, so we use a different separator
+            cmd.env("XMAKERS_TARGETS", targets.replace("::", "//"));
         }
 
         run(&mut cmd, "xmake");
@@ -701,7 +703,9 @@ impl Config {
         cmd.arg(script_file);
 
         if let Some(targets) = &self.targets {
-            cmd.env("XMAKERS_TARGETS", targets);
+            // :: is used to handle namespaces for xmake but it interferes with the env separator
+            // on linux, so we use a different separator
+            cmd.env("XMAKERS_TARGETS", targets.replace("::", "//"));
         }
 
         if let Some(output) = run(&mut cmd, "xmake") {
@@ -877,7 +881,14 @@ fn run(cmd: &mut Command, program: &str) -> Option<String> {
             stdout.unwrap_or_default()
         ));
     }
-    return String::from_utf8(output.stdout).ok();
+
+    let output = String::from_utf8(output.stdout).ok();
+
+    if let Some(s) = output.as_deref() {
+        println!("cargo:warning={}", s);
+    }
+
+    return output;
 }
 
 trait CommaSeparated {

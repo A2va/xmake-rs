@@ -54,8 +54,8 @@ jobs:
       - name: Find and run test binaries
         shell: bash
         run: |
-          for d in tests/*/ ; do
-            if [ -f "${d}Cargo.toml" ]; then
-              cargo run -p $(basename "$d") --target ${{ matrix.rust_target }}
-            fi
+          find tests -type f -name "Cargo.toml" | while read -r cargo_toml; do
+            crate_dir=$(dirname "$cargo_toml")
+            crate_name=$(basename "$crate_dir")
+            cargo run -p "$crate_name" --target ${{ matrix.rust_target }}
           done
