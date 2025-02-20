@@ -40,7 +40,7 @@ function main()
     targetsname = hashset.from(targetsname)
 
     for name, target in pairs(project.targets()) do
-        target:set("enable", targetsname:has(name))
+        target:set("enable", targetsname:has(utils.get_namespace_target(target)))
     end
 
     task.run("build")

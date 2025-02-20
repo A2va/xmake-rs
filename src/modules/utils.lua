@@ -140,6 +140,7 @@ function get_targets()
         local env = os.getenv("XMAKERS_TARGETS") 
         local values = (env ~= "") and env or nil
         if values then
+            values = string.gsub(values, "//", "::")
             values = table.wrap(string.split(values, ","))
         end
         local targets, targetsname = _get_available_targets({targets = values})
@@ -172,6 +173,9 @@ end
 
 -- get the the true target name with namespace
 function get_namespace_target(target)
+    if (not is_namespace_supported()) and (target:namespace() ~= nil) then
+        raise("target(%s):  target is in a namespace, but xmake is neither in v3 nor the compatibility.version policy was set.", name)
+    end
     local name = target:name()
     if is_namespace_supported() and target:namespace() then
         name = target:namespace() .. "::" .. name
@@ -208,7 +212,7 @@ end
 function is_namespace_supported()
     local is_supported = _g.is_namespace_supported
     if is_supported == nil then
-        local is_supported = xmake.version():ge("3.0.0") or (xmake.version():satisfies(">= 2.9.8 < 3.0.0") and (project.policy("compatibility.version") == "3.0"))
+        is_supported = xmake.version():ge("3.0.0") or (xmake.version():satisfies(">=2.9.8 <3.0.0") and (project.policy("compatibility.version") == "3.0"))
         _g.is_namespace_supported = is_supported
     end
     return is_supported
