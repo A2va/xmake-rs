@@ -124,9 +124,6 @@ function _get_binary_target(targets)
 
     for _, target in ipairs(targets) do
         fake_target:add("deps", target:name())
-        for _, rule in ipairs(target:orderules()) do
-            fake_target:add("rules", rule:name())
-        end
     end
 
     -- normally this method is already present in the xmake codebase

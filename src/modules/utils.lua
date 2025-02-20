@@ -74,7 +74,6 @@ function _get_available_targets(opt)
     local set = hashset.new()
 
     local map = function(index, target)
-        print("map target", target)
         return project.target(target)
     end
 

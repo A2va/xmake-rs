@@ -884,9 +884,9 @@ fn run(cmd: &mut Command, program: &str) -> Option<String> {
 
     let output = String::from_utf8(output.stdout).ok();
 
-    if let Some(s) = output.as_deref() {
-        println!("cargo:warning={}", s);
-    }
+    // if let Some(s) = output.as_deref() {
+    //     println!("cargo:warning={}", s);
+    // }
 
     return output;
 }
