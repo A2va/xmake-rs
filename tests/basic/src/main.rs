@@ -1,11 +1,10 @@
 extern crate libc;
 
 extern {
-    fn double_input(input: libc::c_int) -> libc::c_int;
+    fn add(a: libc::c_int, b: libc::c_int) -> libc::c_int;
 }
 
 fn main() {
-    let input = 4;
-    let output = unsafe { double_input(input) };
-    assert!(output == 8, "{} * 2 != 8", input);
+    let output = unsafe { add(4, 4) };
+    assert!(output == 8, "4 + 4 != {}", output);
 }
