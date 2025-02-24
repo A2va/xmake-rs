@@ -427,9 +427,9 @@ impl Config {
         cmd.arg(script_file);
 
         if let Some(targets) = &self.targets {
-            // :: is used to handle namespaces for xmake but it interferes with the env separator
+            // :: is used to handle namespaces in xmake but it interferes with the env separator
             // on linux, so we use a different separator
-            cmd.env("XMAKERS_TARGETS", targets.replace("::", "//"));
+            cmd.env("XMAKERS_TARGETS", targets.replace("::", "||"));
         }
 
         run(&mut cmd, "xmake");
@@ -703,9 +703,9 @@ impl Config {
         cmd.arg(script_file);
 
         if let Some(targets) = &self.targets {
-            // :: is used to handle namespaces for xmake but it interferes with the env separator
+            // :: is used to handle namespaces in xmake but it interferes with the env separator
             // on linux, so we use a different separator
-            cmd.env("XMAKERS_TARGETS", targets.replace("::", "//"));
+            cmd.env("XMAKERS_TARGETS", targets.replace("::", "||"));
         }
 
         if let Some(output) = run(&mut cmd, "xmake") {

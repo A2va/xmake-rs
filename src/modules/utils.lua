@@ -140,7 +140,7 @@ function get_targets()
         local env = os.getenv("XMAKERS_TARGETS")
         local values = (env ~= "") and env or nil
         if values then
-            values = string.gsub(values, "//", "::")
+            values = string.gsub(values, "||", "::")
             values = table.wrap(string.split(values, ","))
         end
         local targets, targetsname = _get_available_targets({targets = values})
