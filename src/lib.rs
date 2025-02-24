@@ -231,7 +231,6 @@ pub struct Config {
     static_crt: Option<bool>,
     runtimes: Option<String>,
     no_stl_link: bool,
-    cpp_link_stdlib: Option<String>,
     cache: ConfigCache,
 }
 
@@ -267,7 +266,6 @@ impl Config {
             static_crt: None,
             runtimes: None,
             no_stl_link: false,
-            cpp_link_stdlib: None,
             cache: ConfigCache::default(),
         }
     }
@@ -354,23 +352,6 @@ impl Config {
     /// This option defaults to `false`.
     pub fn static_crt(&mut self, static_crt: bool) -> &mut Config {
         self.static_crt = Some(static_crt);
-        self
-    }
-
-    /// Set the standard library to link against when compiling with C++
-    /// support (only Android).
-    /// The given library name must not contain the `lib` prefix.
-    ///
-    ///
-    /// Common values:
-    /// - `c++_static`
-    /// - `c++_shared`
-    /// - `gnustl_static`
-    /// - `gnustl_shared`
-    /// - `stlport_shared`
-    /// - `stlport_static`
-    pub fn cpp_link_stdlib(&mut self, stblib: &str) -> &mut Config {
-        self.cpp_link_stdlib = Some(stblib.to_string());
         self
     }
 
@@ -589,12 +570,6 @@ impl Config {
                 if let Ok(ndk) = env::var("ANDROID_NDK_HOME") {
                     cmd.arg(format!("--ndk={}", ndk));
                 }
-                if self.cpp_link_stdlib.is_some() {
-                    cmd.arg(format!(
-                        "--ndk_cxxstl={}",
-                        self.cpp_link_stdlib.clone().unwrap()
-                    ));
-                }
                 cmd.arg(format!("--toolchain={}", "ndk"));
             }
 
@@ -632,7 +607,7 @@ impl Config {
 
         if let Some(runtimes) = &self.runtimes {
             cmd.arg(format!("--runtimes={}", runtimes));
-        } else if self.no_stl_link {
+        } else if !self.no_stl_link {
             // Static CRT
             let static_crt = self.static_crt.unwrap_or_else(|| self.get_static_crt());
             let debug = match self.get_mode() {
