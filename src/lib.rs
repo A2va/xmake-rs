@@ -266,7 +266,7 @@ impl Config {
             env: Vec::new(),
             static_crt: None,
             runtimes: None,
-            no_stl_link: true,
+            no_stl_link: false,
             cpp_link_stdlib: None,
             cache: ConfigCache::default(),
         }
