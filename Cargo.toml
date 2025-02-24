@@ -20,4 +20,5 @@ members = [
     ".",
     "tests/basic",
     "tests/basic-namespace",
+    "tests/basic-cxx"
 ]
