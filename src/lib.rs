@@ -533,38 +533,12 @@ impl Config {
 
         let os = getenv_unwrap("CARGO_CFG_TARGET_OS");
 
-        // Convert rust platform and arch to xmake
-        let plat = self
-            .get_xmake_plat(os.clone())
-            .expect("unsupported rust target");
-
-        let arch = match (
-            plat.as_str(),
-            getenv_unwrap("CARGO_CFG_TARGET_ARCH").as_str(),
-        ) {
-            ("android", a) if os == "androideabi" => match a {
-                "arm" => "armeabi", // TODO Check with cc-rs if it's true
-                "armv7" => "armeabi-v7a",
-                a => a,
-            },
-            ("android", "aarch64") => "arm64-v8a",
-            ("android", "i686") => "x86",
-            ("appletvos", "aarch64") => "arm64",
-            ("watchos", "arm64_32") => "armv7k",
-            ("watchos", "armv7k") => "armv7k",
-            ("iphoneos", "aarch64") => "arm64",
-            ("macosx", "aarch64") => "arm64",
-            ("windows", "i686") => "x86",
-            ("wasm", _) => "wasm32",
-            (_, "aarch64") => "arm64",
-            (_, "i686") => "i386",
-            (_, a) => a,
-        }
-        .to_string();
-
+        let plat = self.get_xmake_plat();
+        cmd.arg(format!("--plat={}", plat));
+    
         if host != target {
-            cmd.arg(format!("--plat={}", plat));
-            cmd.arg(format!("--arch={}", arch));
+            let arch = self.get_xmake_arch();
+            cmd.arg(format!("--arch={}", arch));    
 
             if plat == "android" {
                 if let Ok(ndk) = env::var("ANDROID_NDK_HOME") {
@@ -601,8 +575,6 @@ impl Config {
                 cmd.arg(format!("--cross={}-{}", arch, os));
                 cmd.arg(format!("--toolchain={}", "cross"));
             }
-        } else {
-            cmd.arg(format!("--plat={}", plat));
         }
 
         if let Some(runtimes) = &self.runtimes {
@@ -635,9 +607,6 @@ impl Config {
         }
 
         run(&mut cmd, "xmake");
-
-        self.cache.plat = Some(plat);
-        self.cache.arch = Some(arch);
     }
 
     /// Returns a reference to the `BuildInfo` associated with this build.
@@ -679,7 +648,7 @@ impl Config {
 
         if let Some(targets) = &self.targets {
             // :: is used to handle namespaces in xmake but it interferes with the env separator
-            // on linux, so we use a different separator
+            // on linux, so use a different separator
             cmd.env("XMAKERS_TARGETS", targets.replace("::", "||"));
         }
 
@@ -699,22 +668,64 @@ impl Config {
     }
 
     /// Convert rust platform to xmake one
-    fn get_xmake_plat(&self, platform: String) -> Option<String> {
+    fn get_xmake_plat(&mut self) -> String {
+        if let Some(ref plat) = self.cache.plat {
+            return plat.clone();
+        }
+
         // List of xmake platform https://github.com/xmake-io/xmake/tree/master/xmake/platforms
-        match platform.as_str() {
-            "windows" => Some("windows".to_string()),
-            "linux" => Some("linux".to_string()),
-            "android" => Some("android".to_string()),
-            "androideabi" => Some("android".to_string()),
-            "emscripten" => Some("wasm".to_string()),
-            "macos" => Some("macosx".to_string()),
-            "ios" => Some("iphoneos".to_string()),
-            "tvos" => Some("appletvos".to_string()),
+        let plat = match self.getenv_os("CARGO_CFG_TARGET_OS").unwrap().as_str() {
+            "windows" => Some("windows"),
+            "linux" => Some("linux"),
+            "android" => Some("android"),
+            "androideabi" => Some("android"),
+            "emscripten" => Some("wasm"),
+            "macos" => Some("macosx"),
+            "ios" => Some("iphoneos"),
+            "tvos" => Some("appletvos"),
             "fuchsia" => None,
             "solaris" => None,
-            _ if getenv_unwrap("CARGO_CFG_TARGET_FAMILY") == "wasm" => Some("wasm".to_string()),
-            _ => Some("cross".to_string()),
+            _ if getenv_unwrap("CARGO_CFG_TARGET_FAMILY") == "wasm" => Some("wasm"),
+            _ => Some("cross"),
+        }.expect("unsupported rust target");
+
+        self.cache.plat = Some(plat.to_string());
+        self.cache.plat.clone().unwrap()
+
+    }
+
+    fn get_xmake_arch(&mut self) -> String {
+        if let Some(ref arch) = self.cache.arch {
+            return arch.clone();
         }
+
+        let os = self.getenv_os("CARGO_CFG_TARGET_OS").unwrap();
+        let target_arch = self.getenv_os("CARGO_CFG_TARGET_ARCH").unwrap();
+        let plat = self.get_xmake_plat();
+
+        let arch = match (plat.as_str(), target_arch.as_str()) {
+            ("android", a) if os == "androideabi" => match a {
+                "arm" => "armeabi", // TODO Check with cc-rs if it's true
+                "armv7" => "armeabi-v7a",
+                a => a,
+            },
+            ("android", "aarch64") => "arm64-v8a",
+            ("android", "i686") => "x86",
+            ("appletvos", "aarch64") => "arm64",
+            ("watchos", "arm64_32") => "armv7k",
+            ("watchos", "armv7k") => "armv7k",
+            ("iphoneos", "aarch64") => "arm64",
+            ("macosx", "aarch64") => "arm64",
+            ("windows", "i686") => "x86",
+            ("wasm", _) => "wasm32",
+            (_, "aarch64") => "arm64",
+            (_, "i686") => "i386",
+            (_, a) => a,
+        }
+        .to_string();
+
+        self.cache.arch = Some(arch);
+        self.cache.arch.clone().unwrap()
     }
 
     /// Return xmake mode or inferred from Rust's compilation profile.
