@@ -482,24 +482,13 @@ impl Config {
                         }
                     }
                 } else {
-                    // These runtimes may not be the most appropriate for each platform, but
-                    // taken the GNU standard libary is the most common one on linux, and same for
-                    // the clang equivalent on windows.
-                    // TODO Explore which runtimes is more approriate for macosx
-                    let runtime: Option<&str> = match self.cache.plat().as_str() {
-                        "linux" => Some("stdc++"),
-                        "android" => Some("c++"),
-                        _ => None,
+                    let runtime = self.get_runtimes();
+                    let (name, _) = runtime.split_once("_").unwrap();
+                    let kind = match runtime.contains("static") {
+                        true => "static",
+                        false => "dylib",
                     };
-
-                    if let Some(runtime) = runtime {
-                        // Use the kind of crt as a reference
-                        let kind = match self.get_static_crt() {
-                            true => "static",
-                            false => "dylib",
-                        };
-                        println!(r"cargo:rustc-link-lib={}={}", kind, runtime);
-                    }
+                    println!(r"cargo:rustc-link-lib={}={}", kind, name);
                 }
             }
         }
@@ -535,10 +524,10 @@ impl Config {
 
         let plat = self.get_xmake_plat();
         cmd.arg(format!("--plat={}", plat));
-    
+
         if host != target {
             let arch = self.get_xmake_arch();
-            cmd.arg(format!("--arch={}", arch));    
+            cmd.arg(format!("--arch={}", arch));
 
             if plat == "android" {
                 if let Ok(ndk) = env::var("ANDROID_NDK_HOME") {
@@ -580,20 +569,7 @@ impl Config {
         if let Some(runtimes) = &self.runtimes {
             cmd.arg(format!("--runtimes={}", runtimes));
         } else if !self.no_stl_link {
-            // Static CRT
-            let static_crt = self.static_crt.unwrap_or_else(|| self.get_static_crt());
-            let debug = match self.get_mode() {
-                // rusct doesn't support debug version of the CRT
-                // "debug" => "d",
-                // "releasedbg" => "d",
-                _ => "",
-            };
-
-            let msvc_runtime = match static_crt {
-                true => format!("MT{}", debug),
-                false => format!("MD{}", debug),
-            };
-            cmd.arg(format!("--runtimes={},stdc++_static", msvc_runtime));
+            cmd.arg(format!("--runtimes={}", self.get_runtimes()));
         }
 
         // Compilation mode: release, debug...
@@ -659,11 +635,45 @@ impl Config {
     }
 
     fn get_static_crt(&self) -> bool {
-        let feature = env::var("CARGO_CFG_TARGET_FEATURE").unwrap_or(String::new());
-        if feature.contains("crt-static") {
-            true
-        } else {
-            false
+        return self.static_crt.unwrap_or_else(|| {
+            let feature = env::var("CARGO_CFG_TARGET_FEATURE").unwrap_or(String::new());
+            if feature.contains("crt-static") {
+                true
+            } else {
+                false
+            }
+        });
+    }
+
+    // In case no runtimes has been set, get one
+    fn get_runtimes(&mut self) -> String {
+        // These runtimes may not be the most appropriate for each platform, but
+        // taken the GNU standard libary is the most common one on linux, and same for
+        // the clang equivalent on android.
+        // TODO Explore which runtimes is more approriate for macosx
+        let determine_runtime = |plat: &str| -> Option<&str> {
+            match plat {
+                "linux" => Some("stdc++"),
+                "android" => Some("c++"),
+                _ => None,
+            }
+        };
+
+        let static_crt = self.get_static_crt();
+        let msvc_runtime = match static_crt {
+            true => "MT",
+            false => "MD",
+        };
+
+        let kind = match static_crt {
+            true => "static",
+            false => "shared",
+        };
+
+        let runtime = determine_runtime(self.get_xmake_plat().as_str());
+        match runtime {
+            Some(r) => format!("{}_{}", r, kind),
+            None => msvc_runtime.to_owned(),
         }
     }
 
@@ -687,11 +697,11 @@ impl Config {
             "solaris" => None,
             _ if getenv_unwrap("CARGO_CFG_TARGET_FAMILY") == "wasm" => Some("wasm"),
             _ => Some("cross"),
-        }.expect("unsupported rust target");
+        }
+        .expect("unsupported rust target");
 
         self.cache.plat = Some(plat.to_string());
         self.cache.plat.clone().unwrap()
-
     }
 
     fn get_xmake_arch(&mut self) -> String {
