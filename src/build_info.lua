@@ -219,10 +219,9 @@ function _get_linkdirs(target, opt)
 end
 
 function _find_kind(link, linkdirs)
-    -- In the xmake codebase, shared comes before static in the kind table.
-    -- But we want to make sure that shared is before static, at least on Windows 
-    -- (it doesn't matter on other platforms), because .lib files are always in the same folder as the .dll file.
-    -- And since it's the same as static library, we need to check the shared kind first.
+    -- in find_library of the xmake codebase, shared comes before static in the kind table.
+    -- but on windows there is a problem because .lib (static librairies) files can appear in a shared package/target
+    -- thus guessing wrongly the link kind, to prevent that we must detect shared library before static one. 
     local lib = find_library(link, linkdirs, {kind = {"shared", "static"}, plat = config.plat()})
     if not lib then
         return "unknown"
