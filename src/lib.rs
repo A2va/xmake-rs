@@ -201,6 +201,7 @@ struct ConfigCache {
     build_info: BuildInfo,
     plat: Option<String>,
     arch: Option<String>,
+    xmake_version: Option<Version>,
     env: HashMap<String, Option<String>>,
 }
 
@@ -684,6 +685,7 @@ impl Config {
         }
 
         // List of xmake platform https://github.com/xmake-io/xmake/tree/master/xmake/platforms
+        // Rust targets: https://doc.rust-lang.org/rustc/platform-support.html
         let plat = match self.getenv_os("CARGO_CFG_TARGET_OS").unwrap().as_str() {
             "windows" => Some("windows"),
             "linux" => Some("linux"),
@@ -709,9 +711,14 @@ impl Config {
             return arch.clone();
         }
 
+        // List rust targets with rustc --print target-list
         let os = self.getenv_os("CARGO_CFG_TARGET_OS").unwrap();
         let target_arch = self.getenv_os("CARGO_CFG_TARGET_ARCH").unwrap();
         let plat = self.get_xmake_plat();
+
+        // From v2.9.9 (not released) onwards, XMake used arm64 instead of arm64-v8a
+        let arm64_changes = self.cache.xmake_version.as_ref().unwrap_or(&XMAKE_MINIMUM_VERSION)
+        < &Version::new(2, 9, 9);
 
         let arch = match (plat.as_str(), target_arch.as_str()) {
             ("android", a) if os == "androideabi" => match a {
@@ -721,13 +728,14 @@ impl Config {
             },
             ("android", "aarch64") => "arm64-v8a",
             ("android", "i686") => "x86",
-            ("appletvos", "aarch64") => "arm64",
+            ("linux", "loongarch64") => "loong64",
+            // From v2.9.9 (not released) onwards, XMake used arm64 instead of arm64-v8a
+            ("linux", "aarch64") if arm64_changes => "arm64-v8a",
             ("watchos", "arm64_32") => "armv7k",
             ("watchos", "armv7k") => "armv7k",
             ("iphoneos", "aarch64") => "arm64",
             ("macosx", "aarch64") => "arm64",
             ("windows", "i686") => "x86",
-            ("wasm", _) => "wasm32",
             (_, "aarch64") => "arm64",
             (_, "i686") => "i386",
             (_, a) => a,
@@ -822,6 +830,7 @@ impl Config {
                 version, XMAKE_MINIMUM_VERSION
             );
         }
+        self.cache.xmake_version = Some(version);
     }
 
     fn xmake_command(&mut self) -> Command {
