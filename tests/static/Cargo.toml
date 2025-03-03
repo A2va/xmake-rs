@@ -1,5 +1,5 @@
 [package]
-name = "basic"
+name = "static"
 authors = ["A2va"]
 build = "build.rs"
 
