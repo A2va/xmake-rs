@@ -842,8 +842,9 @@ impl Config {
             cmd.env(k, v);
         }
 
+    
         // Set the project dir env for xmake
-        cmd.env("XMAKE_PROJECT_DIR", self.path.clone());
+        cmd.current_dir(self.path.as_path());
         // To no have the color output
         cmd.env("XMAKE_THEME", "plain");
         cmd
@@ -868,11 +869,8 @@ impl Config {
 
 fn run(cmd: &mut Command, program: &str) -> Option<String> {
     println!("running: {:?}", cmd);
-    use std::io::{BufRead, BufReader};
-    use std::process::{Stdio};
-    // cmd.env("XMAKE_PROFILE", "trace");
-    let mut child = match cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn() {
-        Ok(child) => child,
+    let output = match cmd.output() {
+        Ok(out) => out,
         Err(ref e) if e.kind() == ErrorKind::NotFound => {
             fail(&format!(
                 "failed to execute command: {}\nis `{}` not installed?",
@@ -881,66 +879,23 @@ fn run(cmd: &mut Command, program: &str) -> Option<String> {
         }
         Err(e) => fail(&format!("failed to execute command: {}", e)),
     };
-
-    let mut output = Vec::new();
-    
-    // Read stdout in real-time
-    if let Some(stdout) = child.stdout.take() {
-        let reader = BufReader::new(stdout);
-        for line in reader.lines() {
-            if let Ok(line) = line {
-                println!("stdout: {}", line);
-                output.extend_from_slice(line.as_bytes());
-                output.push(b'\n');
-            }
-        }
-    }
-
-    // Wait for the command to complete
-    let status = child.wait().expect("failed to wait on child process");
-
-    if !status.success() {
+    if !output.status.success() {
+        let stdout = String::from_utf8(output.stdout).ok();
         fail(&format!(
-            "command did not execute successfully, got: {}",
-            status
+            "command did not execute successfully, got: {}\nstdout: {}",
+            output.status,
+            stdout.unwrap_or_default()
         ));
     }
 
-    String::from_utf8(output).ok()
+    let output = String::from_utf8(output.stdout).ok();
+
+    if let Some(s) = output.as_deref() {
+        println!("stdout: {}", s);
+    }
+
+    return output;
 }
-
-
-// fn run(cmd: &mut Command, program: &str) -> Option<String> {
-//     println!("running: {:?}", cmd);
-
-//     // cmd.env("XMAKE_PROFILE", "stuck");
-//     let output = match cmd.output() {
-//         Ok(out) => out,
-//         Err(ref e) if e.kind() == ErrorKind::NotFound => {
-//             fail(&format!(
-//                 "failed to execute command: {}\nis `{}` not installed?",
-//                 e, program
-//             ));
-//         }
-//         Err(e) => fail(&format!("failed to execute command: {}", e)),
-//     };
-//     if !output.status.success() {
-//         let stdout = String::from_utf8(output.stdout).ok();
-//         fail(&format!(
-//             "command did not execute successfully, got: {}\nstdout: {}",
-//             output.status,
-//             stdout.unwrap_or_default()
-//         ));
-//     }
-
-//     let output = String::from_utf8(output.stdout).ok();
-
-//     if let Some(s) = output.as_deref() {
-//         println!("stdout: {}", s);
-//     }
-
-//     return output;
-// }
 
 trait CommaSeparated {
     fn as_comma_separated(self) -> String;

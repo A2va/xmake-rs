@@ -1,6 +1,7 @@
 add_repositories("xmakers-repo https://github.com/A2va/xmakers-repo")
 
 add_requires("xmrs-bar", {configs = {shared = false}})
+add_requireconfs("xmrs-bar.xmrs-foo", {configs = {shared = false}})
 
 target("target")
     set_kind("static")
