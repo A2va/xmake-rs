@@ -23,5 +23,9 @@ members = [
     "tests/namespace",
     "tests/shared",
     "tests/static",
+    "tests/packages/sht-shf-shb",
+    "tests/packages/stt-shf-shb",
     "tests/packages/stt-stf-stb",
+    "tests/packages/stt-stf-shb",
+    "tests/packages/stt-shf-stb"
 ]
