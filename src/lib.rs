@@ -416,9 +416,11 @@ impl Config {
 
         run(&mut cmd, "xmake");
 
-        // XMake put libary in the lib folder
-        let dst = self.install().join("lib");
-        println!("cargo:root={}", dst.display());
+        // Special link search path for dynamic libraries, because 
+        // the path are appended to the dynamic library search path environment variable
+        // only if there are within OUT_DIR
+        let dst = self.install().join("bin");
+        println!("cargo:rustc-link-search=native={}", dst.display());
 
         if let Some(info) = self.get_build_info() {
             self.cache.build_info = info;
@@ -595,14 +597,19 @@ impl Config {
     /// Install target in OUT_DIR.
     fn install(&mut self) -> PathBuf {
         let mut cmd = self.xmake_command();
-        cmd.arg("install");
+        cmd.arg("lua");
 
         let dst = self
             .out_dir
             .clone()
             .unwrap_or_else(|| PathBuf::from(getenv_unwrap("OUT_DIR")));
 
-        cmd.arg("-o").arg(dst.clone());
+        // Get absolute path to the crate root
+        let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let script_file = crate_root.join("src").join("install.lua");
+        cmd.arg(script_file);
+        
+        cmd.env("XMAKERS_INSTALL_DIR", dst.clone());        
         if self.verbose {
             cmd.arg("-v");
         }
