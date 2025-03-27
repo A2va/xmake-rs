@@ -42,8 +42,8 @@ use std::process::{Command, Stdio};
 use std::str::FromStr;
 
 // The version of xmake that is required for this crate to work.
-// https://github.com/xmake-io/xmake/wiki/Xmake-v2.8.7-released
-const XMAKE_MINIMUM_VERSION: Version = Version::new(2, 8, 7);
+// https://github.com/xmake-io/xmake/releases/tag/v2.9.6
+const XMAKE_MINIMUM_VERSION: Version = Version::new(2, 9, 6);
 
 /// Represents the different kinds of linkage for a library.
 ///
@@ -419,8 +419,9 @@ impl Config {
         // Special link search path for dynamic libraries, because 
         // the path are appended to the dynamic library search path environment variable
         // only if there are within OUT_DIR
-        let dst = self.install().join("bin");
-        println!("cargo:rustc-link-search=native={}", dst.display());
+        let dst = self.install();
+        println!("cargo:rustc-link-search=native={}", dst.join("bin").display());
+        println!("cargo:rustc-link-search=native={}", dst.join("lib").display());
 
         if let Some(info) = self.get_build_info() {
             self.cache.build_info = info;
@@ -636,7 +637,7 @@ impl Config {
             cmd.env("XMAKERS_TARGETS", targets.replace("::", "||"));
         }
 
-        if let Some(output) = run(&mut cmd, "xmake") {
+        if let Some(output) = run(&mut cmd, "xmake", false) {
             return output.parse().ok();
         }
         None

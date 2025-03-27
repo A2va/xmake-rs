@@ -25,6 +25,10 @@
 -- IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 -- DEALINGS IN THE SOFTWARE.
 
+import("core.project.config")
+import("core.project.project")
+
+import("core.base.bytes")
 import("core.base.graph")
 import("core.base.hashset")
 import("core.cache.memcache")
@@ -160,6 +164,81 @@ function get_cache_key(targets)
         table.insert(key, target:name())
     end
     return table.concat(key, "-")
+end
+
+-- create a binary target, that depends on all given targets
+function create_binary_target(targets)
+
+    -- take the first target as the fake target
+    local fake_target = targets[1]:clone()
+    local hashed_key =  hash.sha256(bytes(get_cache_key(targets)))
+    fake_target:name_set("xmake-rs-" .. string.sub(hashed_key, 1, 8))
+    fake_target:set("kind", "binary")
+
+    -- reset some info
+    fake_target:set("deps", nil)
+    fake_target:set("packages", nil)
+    fake_target:set("rules", nil)
+    fake_target:set("links", nil)
+    fake_target:set("syslinks", nil)
+    fake_target:set("frameworks", nil)
+    fake_target:set("linkdirs", nil)
+    fake_target:set("runenvs", nil)
+
+    for _, target in ipairs(targets) do
+        fake_target:add("deps", target:name())
+    end
+
+    -- normally this method is already present in the xmake codebase
+    -- but the opt.interface is set to true which is not what I want, so I override it
+    fake_target.pkgenvs = function(self)
+        local pkgenvs = self._PKGENVS
+        if pkgenvs == nil then
+            local pkgs = hashset.new()
+            for _, pkgname in ipairs(table.wrap(self:get("packages"))) do
+                local pkg = self:pkg(pkgname)
+                if pkg then
+                    pkgs:insert(pkg)
+                end
+            end
+            -- we can also get package envs from deps (public package)
+            -- @see https://github.com/xmake-io/xmake/issues/2729
+            for _, dep in ipairs(self:orderdeps()) do
+                for _, pkgname in ipairs(table.wrap(dep:get("packages", {interface = false}))) do
+                    local pkg = dep:pkg(pkgname)
+                    if pkg then
+                        pkgs:insert(pkg)
+                    end
+                end
+            end
+            for _, pkg in pkgs:orderkeys() do
+                local envs = pkg:get("envs")
+                if envs then
+                    for name, values in table.orderpairs(envs) do
+                        if type(values) == "table" then
+                            values = path.joinenv(values)
+                        end
+                        pkgenvs = pkgenvs or {}
+                        if pkgenvs[name] then
+                            pkgenvs[name] = pkgenvs[name] .. path.envsep() .. values
+                        else
+                            pkgenvs[name] = values
+                        end
+                    end
+                end
+            end
+            self._PKGENVS = pkgenvs or false
+        end
+        return pkgenvs or nil
+    end
+
+    project.target_add(fake_target)
+
+    -- load the newly made target
+    config.load()
+    project.load_targets()
+
+    return fake_target
 end
 
 -- retrieves a value from the specified target, using the given name and scope.

@@ -24,25 +24,31 @@
 -- IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 -- DEALINGS IN THE SOFTWARE.
 
+import("core.cache.memcache")
 import("core.project.config")
 import("core.project.project")
+
 import("core.base.hashset")
 import("core.base.task")
+import("target.action.install")
 
 import("modules.utils")
 
 function main()
     local oldir = os.cd(os.projectdir())
 
-    task.run("config")
+    config.load()
+    project.load_targets()
 
-    local _, targetsname = utils.get_targets()
-    targetsname = hashset.from(targetsname)
+    local targets, _ = utils.get_targets()
+    local binary_target = utils.create_binary_target(targets)
 
-    for name, target in pairs(project.targets()) do
-        target:set("default", targetsname:has(utils.get_namespace_target(target)))
-    end
+    -- create a dummy executable file
+    -- because this excutable is not existent xmake cannot check which dlls are dependants so disable stripping
+    os.touch(binary_target:targetfile())
+    memcache.cache("core.project.project"):set2("policies", "install.strip_packagelibs", false)
+    binary_target:set("installdir", os.getenv("XMAKERS_INSTALL_DIR"))
+    install(binary_target)
 
-    task.run("install", {installdir = os.getenv("XMAKERS_INSTALL_DIR")})
     os.cd(oldir)
 end
