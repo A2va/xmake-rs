@@ -36,9 +36,9 @@
 
 use std::collections::HashMap;
 use std::env;
-use std::io::ErrorKind;
+use std::io::{BufRead, BufReader, ErrorKind};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::str::FromStr;
 
 // The version of xmake that is required for this crate to work.
@@ -414,7 +414,7 @@ impl Config {
             cmd.env("XMAKERS_TARGETS", targets.replace("::", "||"));
         }
 
-        run(&mut cmd, "xmake");
+        run(&mut cmd, "xmake", false);
 
         // Special link search path for dynamic libraries, because 
         // the path are appended to the dynamic library search path environment variable
@@ -585,7 +585,7 @@ impl Config {
             cmd.arg(option);
         }
 
-        run(&mut cmd, "xmake");
+        run(&mut cmd, "xmake", false);
     }
 
     /// Returns a reference to the `BuildInfo` associated with this build.
@@ -614,7 +614,7 @@ impl Config {
             cmd.arg("-v");
         }
 
-        run(&mut cmd, "xmake");
+        run(&mut cmd, "xmake", false);
         dst
     }
 
@@ -874,10 +874,10 @@ impl Config {
     }
 }
 
-fn run(cmd: &mut Command, program: &str) -> Option<String> {
+fn run(cmd: &mut Command, program: &str, full_output: bool) -> Option<String> {
     println!("running: {:?}", cmd);
-    let output = match cmd.output() {
-        Ok(out) => out,
+    let mut child = match cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn() {
+        Ok(child) => child,
         Err(ref e) if e.kind() == ErrorKind::NotFound => {
             fail(&format!(
                 "failed to execute command: {}\nis `{}` not installed?",
@@ -886,22 +886,39 @@ fn run(cmd: &mut Command, program: &str) -> Option<String> {
         }
         Err(e) => fail(&format!("failed to execute command: {}", e)),
     };
-    if !output.status.success() {
-        let stdout = String::from_utf8(output.stdout).ok();
+
+    let mut output = String::new();
+    let mut take_output = false;
+
+    // Read stdout in real-time
+    if let Some(stdout) = child.stdout.take() {
+        let reader = BufReader::new(stdout);
+        for line in reader.lines() {
+            if let Ok(line) = line {    
+                // Print stdout for logging
+                println!("{}", line);
+
+                take_output &=  !line.starts_with("__xmakers_start__");                
+                if take_output || full_output {
+                    output.push_str(line.as_str());
+                    output.push('\n');
+                }
+                take_output |= line.starts_with("__xmakers_start__");        
+            }
+        }
+    }
+
+    // Wait for the command to complete
+    let status = child.wait().expect("failed to wait on child process");
+
+    if !status.success() {
         fail(&format!(
-            "command did not execute successfully, got: {}\nstdout: {}",
-            output.status,
-            stdout.unwrap_or_default()
+            "command did not execute successfully, got: {}",
+            status
         ));
     }
 
-    let output = String::from_utf8(output.stdout).ok();
-
-    if let Some(s) = output.as_deref() {
-        println!("stdout: {}", s);
-    }
-
-    return output;
+    Some(output)
 }
 
 trait CommaSeparated {
@@ -1088,6 +1105,7 @@ impl Version {
                 .arg("--version")
                 .env("XMAKE_THEME", "plain"),
             "xmake",
+            true
         )?;
         Self::parse(output.as_str())
     }

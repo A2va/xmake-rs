@@ -33,8 +33,9 @@ import("core.project.project")
 
 import("core.base.bytes")
 import("core.base.hashset")
-import("lib.detect.find_library")
+
 import("async.runjobs")
+import("lib.detect.find_library")
 
 import("modules.utils")
 import("modules.builder")
@@ -87,6 +88,8 @@ function _include_scanner(target)
 end
 
 function _print_infos(infos)
+    
+    print("__xmakers_start__")
     for k, v in table.orderpairs(infos) do
         -- links are handled differently
         if k == "links" then
@@ -176,6 +179,7 @@ function _get_binary_target(targets)
     project.load_targets()
 
     return fake_target
+    print("__xmakers_stop__")
 end
 
 function _get_linkdirs(target, opt)
