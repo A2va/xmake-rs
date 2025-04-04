@@ -34,7 +34,7 @@
 //! ```
 #![deny(missing_docs)]
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::io::{BufRead, BufReader, ErrorKind};
 use std::path::{Path, PathBuf};
@@ -416,12 +416,8 @@ impl Config {
 
         run(&mut cmd, "xmake", false);
 
-        // Special link search path for dynamic libraries, because 
-        // the path are appended to the dynamic library search path environment variable
-        // only if there are within OUT_DIR
         let dst = self.install();
-        println!("cargo:rustc-link-search=native={}", dst.join("bin").display());
-        println!("cargo:rustc-link-search=native={}", dst.join("lib").display());
+        let plat = self.get_xmake_plat();
 
         if let Some(info) = self.get_build_info() {
             self.cache.build_info = info;
@@ -435,10 +431,22 @@ impl Config {
                 println!("cargo:rustc-link-search=all={}", directory);
             }
 
+            // Special link search path for dynamic libraries, because 
+            // the path are appended to the dynamic library search path environment variable
+            // only if there are within OUT_DIR
+            let linux_shared_libs_folder = dst.join("lib");
+            println!("cargo:rustc-link-search=native={}", linux_shared_libs_folder.display());
+            println!("cargo:rustc-link-search=native={}", dst.join("lib").display());
+
+            let mut shared_libs = HashSet::new();
+
             for link in build_info.links() {
                 match link.kind() {
                     LinkKind::Static => println!("cargo:rustc-link-lib=static={}", link.name()),
-                    LinkKind::Dynamic => println!("cargo:rustc-link-lib=dylib={}", link.name()),
+                    LinkKind::Dynamic => {
+                        println!("cargo:rustc-link-lib=dylib={}", link.name());
+                        shared_libs.insert(link.name());
+                    }
                     LinkKind::Framework if self.cache.plat() == "macosx" => {
                         println!("cargo:rustc-link-lib=framework={}", link.name())
                     }
@@ -449,6 +457,32 @@ impl Config {
                     }
                     // Let try cargo handle the rest
                     LinkKind::Unknown => println!("cargo:rustc-link-lib={}", link.name()),
+                }
+            }
+
+            // In some cases, xmake does not include all the shared libraries in the link cmd (for example, in the sht-shf-shb test), 
+            // leading to build failures on the rust side because it expected to link them, so the solution is to fetches all the libs from the install directory. 
+            // Since I cannot know the real order of the links, this can cause some problems on some projects.
+            if plat == "linux" && linux_shared_libs_folder.exists() {
+                let files = std::fs::read_dir(dst.join("lib")).unwrap();
+                for entry in files {
+                    if let Ok(file) = entry {
+                        let file_name= file.file_name();
+                        let file_name = file_name.to_str().unwrap();
+                        if file_name.ends_with(".so") || file_name.matches(r"\.so\.\d+").count() > 0 {
+                            if let Some(lib_name) = file_name.strip_prefix("lib") {
+                                let name = if let Some(dot_pos) = lib_name.find(".so") {
+                                    &lib_name[..dot_pos]
+                                } else {
+                                    lib_name
+                                };
+
+                                if !shared_libs.contains(name) {
+                                    println!("cargo:rustc-link-lib=dylib={}", name);
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
