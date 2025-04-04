@@ -1,3 +1,4 @@
+set_policy("package.librarydeps.strict_compatibility", true)
 add_repositories("xmakers-repo https://github.com/A2va/xmakers-repo")
 
 add_requires("xmrs-bar", {configs = {shared = false}})
