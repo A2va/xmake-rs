@@ -79,7 +79,7 @@ pub struct Link {
 #[derive(Default)]
 pub struct BuildInfo {
     /// The directories that contain the linked libraries.
-    linkdirs: Vec<String>,
+    linkdirs: Vec<PathBuf>,
     /// The individual linked libraries.
     links: Vec<Link>,
     /// Whether the build uses the C++.
@@ -124,7 +124,7 @@ impl Link {
 
 impl BuildInfo {
     /// Returns the directories that contain the linked libraries.
-    pub fn linkdirs(&self) -> &[String] {
+    pub fn linkdirs(&self) -> &[PathBuf] {
         &self.linkdirs
     }
 
@@ -181,7 +181,7 @@ impl FromStr for BuildInfo {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let map = parse_info_pairs(s);
 
-        let directories = parse_field::<Vec<String>>(&map, "linkdirs")?;
+        let directories = parse_field::<Vec<PathBuf>>(&map, "linkdirs")?;
         let links = parse_field::<Vec<Link>>(&map, "links")?;
 
         let use_cxx = parse_field::<bool>(&map, "cxx_used")?;
@@ -424,11 +424,11 @@ impl Config {
         }
 
         if self.auto_link {
-            let build_info = &self.cache.build_info;
+            let build_info = &mut self.cache.build_info;
 
             for directory in build_info.linkdirs() {
                 // Reference: https://doc.rust-lang.org/cargo/reference/build-scripts.html#rustc-link-search
-                println!("cargo:rustc-link-search=all={}", directory);
+                println!("cargo:rustc-link-search=all={}", directory.display());
             }
 
             // Special link search path for dynamic libraries, because 
@@ -437,6 +437,9 @@ impl Config {
             let linux_shared_libs_folder = dst.join("lib");
             println!("cargo:rustc-link-search=native={}", linux_shared_libs_folder.display());
             println!("cargo:rustc-link-search=native={}", dst.join("bin").display());
+
+            build_info.linkdirs.push(linux_shared_libs_folder.clone());
+            build_info.linkdirs.push(dst.join("bin"));
 
             let mut shared_libs = HashSet::new();
 
@@ -447,7 +450,7 @@ impl Config {
                         println!("cargo:rustc-link-lib=dylib={}", link.name());
                         shared_libs.insert(link.name());
                     }
-                    LinkKind::Framework if self.cache.plat() == "macosx" => {
+                    LinkKind::Framework if plat == "macosx" => {
                         println!("cargo:rustc-link-lib=framework={}", link.name())
                     }
                     // For rust, framework type is only for macosx but can be used on multiple system in xmake
@@ -1148,6 +1151,8 @@ impl Version {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use crate::{parse_field, parse_info_pairs, BuildInfo, Link, LinkKind, ParsingError};
 
     #[test]
@@ -1218,7 +1223,7 @@ mod tests {
             Link::new("linkA", LinkKind::Static),
             Link::new("linkB", LinkKind::Dynamic),
         ];
-        let expected_directories = vec!["path/to/libA", "path/to/libB", "path\\to\\libC"];
+        let expected_directories = ["path/to/libA", "path/to/libB", "path\\to\\libC"].map(PathBuf::from).to_vec();
         let expected_cxx = true;
         let expected_stl = false;
 
