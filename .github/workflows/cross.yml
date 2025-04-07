@@ -39,5 +39,5 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcc-multilib
 
-      - name: Cross-compile basic
-        run: cargo build -p basic --target ${{ matrix.target }}
+      - name: Cross-compile static test
+        run: cargo build -p static --target ${{ matrix.target }}

@@ -45,8 +45,8 @@ jobs:
         if: matrix.os == 'ubuntu-latest' && matrix.arch == 'x86'
         run: |
           sudo dpkg --add-architecture i386
-          sudo apt-get update
-          sudo apt-get install -y gcc-multilib
+          sudo apt update
+          sudo apt install -y gcc-multilib g++-multilib
 
       - name: Run xmake package tests
         run: |
@@ -56,8 +56,8 @@ jobs:
       - name: Find and run test binaries
         shell: bash
         run: |
-          for d in tests/*/ ; do
-            if [ -f "${d}Cargo.toml" ]; then
-              cargo run -p $(basename "$d") --target ${{ matrix.rust_target }}
-            fi
+          find tests -type f -name "Cargo.toml" | while read -r cargo_toml; do
+            crate_dir=$(dirname "$cargo_toml")
+            crate_name=$(basename "$crate_dir")
+            cargo run -p "$crate_name" --target ${{ matrix.rust_target }}
           done

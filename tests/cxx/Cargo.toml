@@ -1,11 +1,10 @@
 [package]
-name = "minimal-example"
-version = "0.1.0"
+name = "cxx"
 authors = ["A2va"]
 build = "build.rs"
 
 [dependencies]
-libc = "0.2.141"
+libc = "0.2.169"
 
 [build-dependencies]
 xmake = { path = "../.." }

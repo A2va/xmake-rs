@@ -18,5 +18,14 @@ cc = "1.0.72"
 [workspace]
 members = [
     ".",
-    "tests/minimal-example",
+    "tests/cxx",
+    "tests/check-mode",
+    "tests/namespace",
+    "tests/shared",
+    "tests/static",
+    "tests/packages/sht-shf-shb",
+    "tests/packages/stt-shf-shb",
+    "tests/packages/stt-stf-stb",
+    "tests/packages/stt-stf-shb",
+    "tests/packages/stt-shf-stb"
 ]
