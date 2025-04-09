@@ -23,6 +23,7 @@ members = [
     "tests/namespace",
     "tests/shared",
     "tests/static",
+    "tests/phony",
     "tests/packages/sht-shf-shb",
     "tests/packages/stt-shf-shb",
     "tests/packages/stt-stf-stb",
