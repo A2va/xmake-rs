@@ -45,6 +45,9 @@ function main()
 
     -- create a dummy executable file
     -- because this excutable is not existent xmake cannot check which dlls are dependants so disable stripping
+    if not os.exists(path.directory(binary_target:targetfile())) then
+        os.mkdir(path.directory(binary_target:targetfile()))
+    end
     os.touch(binary_target:targetfile())
     memcache.cache("core.project.project"):set2("policies", "install.strip_packagelibs", false)
     binary_target:set("installdir", os.getenv("XMAKERS_INSTALL_DIR"))

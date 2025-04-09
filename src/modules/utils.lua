@@ -95,7 +95,7 @@ function _get_available_targets(opt)
     for _, target in pairs(targets) do
         -- ignore non enabled target and other than static or shared
         local enabled = target:get("enabled") or true
-        if not (target:is_shared() or target:is_static()) or not enabled then
+        if not (target:is_shared() or target:is_static() or target:is_phony()) or not enabled then
             goto continue
         end
 

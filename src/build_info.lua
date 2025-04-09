@@ -178,16 +178,24 @@ function _get_links(target)
         return filename_map[link] ~= nil
     end
 
+    -- collects all phony targets (which may have dependencies or packages) but have no links to them.
+    local phony_target = {}
+    for _, dep in ipairs(target:orderdeps()) do
+        table.insert(phony_target, utils.get_namespace_target(dep) == "phony")
+    end
+    local is_phony_target = function(idx)
+        return phony_target[idx]
+    end
+
     local items = builder.orderlinks(target)
     local links = {}
-
-    for _, item in ipairs(items) do 
+    
+    for idx, item in ipairs(items) do 
         local values = (type(item.values[1]) == "table") and table.unpack(item.values) or item.values
-        
         local is_syslinks = item.name == "syslinks"
         local is_frameworks = item.name == "frameworks"
 
-        if not (have_groups_order or is_syslinks or is_frameworks) and not is_target(values[1]) then
+        if not (have_groups_order or is_syslinks or is_frameworks) and not (is_target(values[1]) or is_phony_target(idx)) then
             goto continue
         end
 
