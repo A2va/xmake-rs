@@ -46,10 +46,10 @@ function _cache_invalidation()
     local changed = false
 
     local config_hash = hash.sha256(config.filepath())
-    changed = config_hash ~= localcache.get("xmake_rs", "config_hash")
+    changed = config_hash ~= localcache.get("xmake-rs", "config_hash")
     if changed then
-        localcache.set("xmake_rs", "config_hash", config_hash)
-        localcache.save("xmake_rs")
+        localcache.set("xmake-rs", "config_hash", config_hash)
+        localcache.save("xmake-rs")
         return changed
     end
 
@@ -222,7 +222,7 @@ end
 function _link_info(targets, opt)
     opt = opt or {}
 
-    local xmake_rs = localcache.cache("xmake_rs")
+    local xmake_rs = localcache.cache("xmake-rs")
     local cache_key = utils.get_cache_key(targets)
 
     local in_cache = xmake_rs:get2("linkinfo", cache_key) ~= nil
@@ -246,7 +246,7 @@ end
 
 function _stl_usage(target, sourcebatch, opt)
     opt = opt or {}
-    local xmake_rs = localcache.cache("xmake_rs")
+    local xmake_rs = localcache.cache("xmake-rs")
     local modules_cache = localcache.cache("cxxmodules")
 
     -- collect the files that use the stl previously
