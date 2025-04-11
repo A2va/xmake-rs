@@ -12,7 +12,7 @@
 //!
 //! ```toml
 //! [build-dependencies]
-//! xmake = "0.2.2"
+//! xmake = "0.3.0"
 //! ```
 //!
 //! ## Examples
