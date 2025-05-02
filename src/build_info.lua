@@ -258,7 +258,7 @@ function _stl_usage(target, sourcebatch, opt)
     local modules_cache = localcache.cache("cxxmodules")
 
     -- collect the files that use the stl previously
-    local files = xmake_rs:get2("stl", target:name()) or {}
+    local files = xmake_rs:get2("stl", target:name()) and not opt.recheck or {}
     files = hashset.from(files)
 
     -- wrap the on_changed callback
@@ -268,7 +268,7 @@ function _stl_usage(target, sourcebatch, opt)
 
         depend.on_changed(function()
             result = callback(index)
-        end, {dependfile = dependfile, files = {sourcefile}, changed = target:is_rebuilt()})
+        end, {dependfile = dependfile, files = {sourcefile}, changed = target:is_rebuilt(), dryrun = opt.recheck})
         return result
     end
 
@@ -346,22 +346,23 @@ function _stl_usage(target, sourcebatch, opt)
     return files:size() > 0
 end
 
-function _stl_info(targets)
+function _stl_info(targets, opt)
+    opt = opt or {}
     local is_cxx_used = false
     local is_stl_used = false
 
     for _, target in pairs(targets) do
         local sourcebatches, _ = target:sourcebatches()
         local is_cxx = sourcebatches["c++.build"] ~= nil
-        local is_cxx_modules = sourcebatches["c++.build.modules.builder"] ~= nil
+        local is_cxx_modules = sourcebatches["c++.build.modules"] ~= nil
 
         is_cxx_used = is_cxx or is_cxx_modules
         if is_cxx then
-            is_stl_used = _stl_usage(target, sourcebatches["c++.build"], {batchjobs = true})
+            is_stl_used = _stl_usage(target, sourcebatches["c++.build"], {batchjobs = true, recheck = opt.recheck})
         end
 
         if is_cxx_modules then
-            is_stl_used = is_stl_used or _stl_usage(target, sourcebatches["c++.build.modules.builder"], {modules = true, batchjobs = true})
+            is_stl_used = is_stl_used or _stl_usage(target, sourcebatches["c++.build.modules"], {modules = true, recheck = opt.recheck})
         end
 
         if is_stl_used then

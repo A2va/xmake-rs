@@ -34,7 +34,24 @@ import("core.base.hashset")
 import("core.cache.memcache")
 import("core.project.project")
 
-import("rules.c++.modules.modules_support.stl_headers", {rootdir = os.programdir()})
+-- import("rules.c++.modules.stlheaders", {rootdir = os.programdir()})
+
+-- The PR #6338(https://github.com/xmake-io/xmake/pull/6338) changed the location and name of stl_headers
+-- import and with try and test if was imported correctly.
+-- TODO: In xmake-rs v0.4 I will force on xmake v3 so this patch can removed.
+local stl_headers
+try {
+    function ()
+        stl_headers = import("rules.c++.modules.modules_support.stl_headers", {rootdir = os.programdir()})
+    end,
+    catch
+    {
+        function (errors)
+            stl_headers = import("rules.c++.modules.stlheaders", {rootdir = os.programdir()})
+        end
+    }
+}
+assert(stl_headers, "stl_headers is nil")
 
 function _hashset_join(self, ...)
     for _, h in ipairs({...}) do
@@ -50,7 +67,7 @@ function _compiler_support(target)
     local memcache = memcache.cache("compiler_support")
     local cachekey = tostring(target)
     local compiler_support = memcache:get2("compiler_support", cachekey)
-    if compiler_support == nil then
+    if compiler_support == nil and xmake.version():lt("3.0.0") then
         local rootdir = path.join(os.programdir(), "rules", "c++", "modules", "modules_support")
         if target:has_tool("cxx", "clang", "clangxx") then
             compiler_support = import("clang.compiler_support", {anonymous = true, rootdir = rootdir})
@@ -62,8 +79,27 @@ function _compiler_support(target)
             local _, toolname = target:tool("cxx")
             raise("compiler(%s): does not support c++ module!", toolname)
         end
+
         memcache:set2("compiler_support", cachekey, compiler_support)
     end
+
+    -- TODO Remove in xmake-rs v0.4 
+    if compiler_support == nil and xmake.version():ge("3.0.0") then
+        local rootdir = path.join(os.programdir(), "rules", "c++", "modules")
+        if target:has_tool("cxx", "clang", "clangxx") then
+            compiler_support = import("clang.support", {anonymous = true, rootdir = rootdir})
+        elseif target:has_tool("cxx", "gcc", "gxx") then
+            compiler_support = import("gcc.support", {anonymous = true, rootdir = rootdir})
+        elseif target:has_tool("cxx", "cl") then
+            compiler_support = import("msvc.support", {anonymous = true, rootdir = rootdir})
+        else
+            local _, toolname = target:tool("cxx")
+            raise("compiler(%s): does not support c++ module!", toolname)
+        end
+      
+        memcache:set2("compiler_support", cachekey, compiler_support)
+    end
+
     return compiler_support
 end
 
@@ -269,12 +305,15 @@ function is_stl_used(target, includes, opt)
     local stl_includedirs = _compiler_support(target).toolchain_includedirs(target)
     local std_used = false
 
+    -- TODO
+    local is_stl_header = stl_headers.is_stl_header or stl_headers.is_stlheader
+
     for _, include in ipairs(includes) do
         for _, stl_includedir in ipairs(stl_includedirs) do
             local file = path.relative(include, stl_includedir)
-            
+
             local includedirs_check = opt.strict and include:startswith(stl_includedir) or true
-            if includedirs_check and stl_headers.is_stl_header(file) then
+            if includedirs_check and is_stl_header(file) then
                 std_used = true
             end
         end
