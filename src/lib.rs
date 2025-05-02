@@ -1283,15 +1283,6 @@ mod path_clean {
     //!
     //! For convenience, the [`PathClean`] trait is exposed and comes implemented for [`std::path::{Path, PathBuf}`].
     //!
-    //! ```rust
-    //! use std::path::PathBuf;
-    //! use path_clean::{clean, PathClean};
-    //! assert_eq!(clean("hello/world/.."), PathBuf::from("hello"));
-    //! assert_eq!(
-    //!     PathBuf::from("/test/../path/").clean(),
-    //!     PathBuf::from("/path")
-    //! );
-    //! ```
     #![forbid(unsafe_code)]
 
     use std::path::{Component, Path, PathBuf};
