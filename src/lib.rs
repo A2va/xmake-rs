@@ -56,7 +56,7 @@ pub enum LinkKind {
     Dynamic,
     /// The library is a system library, meaning it is provided by the operating system and not included in the final binary.
     System,
-    /// The library is a framework, like [`System`]: self::LinkKind#variant.System it is provided by the operating system but used only on macos.
+    /// The library is a framework, like [`LinkKind::System`], it is provided by the operating system but used only on macos.
     Framework,
     /// The library is unknown, meaning its kind could not be determined.
     Unknown,
@@ -395,13 +395,10 @@ impl Config {
         self.config();
 
         let mut cmd = self.xmake_command();
-        cmd.arg("lua");
+        cmd.task("lua");
 
         // In case of xmake is waiting to download something
         cmd.arg("--yes");
-        if self.verbose {
-            cmd.arg("-v");
-        }
 
         // Get absolute path to the crate root
         let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -414,7 +411,7 @@ impl Config {
             cmd.env("XMAKERS_TARGETS", targets.replace("::", "||"));
         }
 
-        run(&mut cmd, "xmake", false);
+        cmd.run();
 
         let dst = self.install();
         let plat = self.get_xmake_plat();
@@ -431,12 +428,18 @@ impl Config {
                 println!("cargo:rustc-link-search=all={}", directory.display());
             }
 
-            // Special link search path for dynamic libraries, because 
+            // Special link search path for dynamic libraries, because
             // the path are appended to the dynamic library search path environment variable
             // only if there are within OUT_DIR
             let linux_shared_libs_folder = dst.join("lib");
-            println!("cargo:rustc-link-search=native={}", linux_shared_libs_folder.display());
-            println!("cargo:rustc-link-search=native={}", dst.join("bin").display());
+            println!(
+                "cargo:rustc-link-search=native={}",
+                linux_shared_libs_folder.display()
+            );
+            println!(
+                "cargo:rustc-link-search=native={}",
+                dst.join("bin").display()
+            );
 
             build_info.linkdirs.push(linux_shared_libs_folder.clone());
             build_info.linkdirs.push(dst.join("bin"));
@@ -463,16 +466,17 @@ impl Config {
                 }
             }
 
-            // In some cases, xmake does not include all the shared libraries in the link cmd (for example, in the sht-shf-shb test), 
-            // leading to build failures on the rust side because it expected to link them, so the solution is to fetches all the libs from the install directory. 
+            // In some cases, xmake does not include all the shared libraries in the link cmd (for example, in the sht-shf-shb test),
+            // leading to build failures on the rust side because it expected to link them, so the solution is to fetches all the libs from the install directory.
             // Since I cannot know the real order of the links, this can cause some problems on some projects.
             if plat == "linux" && linux_shared_libs_folder.exists() {
                 let files = std::fs::read_dir(dst.join("lib")).unwrap();
                 for entry in files {
                     if let Ok(file) = entry {
-                        let file_name= file.file_name();
+                        let file_name = file.file_name();
                         let file_name = file_name.to_str().unwrap();
-                        if file_name.ends_with(".so") || file_name.matches(r"\.so\.\d+").count() > 0 {
+                        if file_name.ends_with(".so") || file_name.matches(r"\.so\.\d+").count() > 0
+                        {
                             if let Some(lib_name) = file_name.strip_prefix("lib") {
                                 let name = if let Some(dot_pos) = lib_name.find(".so") {
                                     &lib_name[..dot_pos]
@@ -541,7 +545,7 @@ impl Config {
         self.check_version();
 
         let mut cmd = self.xmake_command();
-        cmd.arg("config");
+        cmd.task("config");
 
         // In case of xmake is waiting to download something
         cmd.arg("--yes");
@@ -552,10 +556,6 @@ impl Config {
             .unwrap_or_else(|| PathBuf::from(getenv_unwrap("OUT_DIR")));
 
         cmd.arg(format!("--buildir={}", dst.display()));
-
-        if self.verbose {
-            cmd.arg("-v");
-        }
 
         // Cross compilation
         let host = getenv_unwrap("HOST");
@@ -623,7 +623,7 @@ impl Config {
             cmd.arg(option);
         }
 
-        run(&mut cmd, "xmake", false);
+        cmd.run();
     }
 
     /// Returns a reference to the `BuildInfo` associated with this build.
@@ -635,7 +635,7 @@ impl Config {
     /// Install target in OUT_DIR.
     fn install(&mut self) -> PathBuf {
         let mut cmd = self.xmake_command();
-        cmd.arg("lua");
+        cmd.task("lua");
 
         let dst = self
             .out_dir
@@ -646,22 +646,15 @@ impl Config {
         let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
         let script_file = crate_root.join("src").join("install.lua");
         cmd.arg(script_file);
-        
-        cmd.env("XMAKERS_INSTALL_DIR", dst.clone());        
-        if self.verbose {
-            cmd.arg("-v");
-        }
 
-        run(&mut cmd, "xmake", false);
+        cmd.env("XMAKERS_INSTALL_DIR", dst.clone());
+        cmd.run();
         dst
     }
 
     fn get_build_info(&mut self) -> Option<BuildInfo> {
         let mut cmd = self.xmake_command();
-        cmd.arg("lua");
-        if self.verbose {
-            cmd.arg("-v");
-        }
+        cmd.task("lua");
 
         // Get absolute path to the crate root
         let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -674,7 +667,7 @@ impl Config {
             cmd.env("XMAKERS_TARGETS", targets.replace("::", "||"));
         }
 
-        if let Some(output) = run(&mut cmd, "xmake", false) {
+        if let Some(output) = cmd.run() {
             return output.parse().ok();
         }
         None
@@ -762,8 +755,12 @@ impl Config {
         let plat = self.get_xmake_plat();
 
         // From v2.9.9 (not released) onwards, XMake used arm64 instead of arm64-v8a
-        let arm64_changes = self.cache.xmake_version.as_ref().unwrap_or(&XMAKE_MINIMUM_VERSION)
-        < &Version::new(2, 9, 9);
+        let arm64_changes = self
+            .cache
+            .xmake_version
+            .as_ref()
+            .unwrap_or(&XMAKE_MINIMUM_VERSION)
+            < &Version::new(2, 9, 9);
 
         let arch = match (plat.as_str(), target_arch.as_str()) {
             ("android", a) if os == "androideabi" => match a {
@@ -862,7 +859,7 @@ impl Config {
     }
 
     fn check_version(&mut self) {
-        let version = Version::from_command(self.xmake_executable().as_str());
+        let version = Version::from_command();
         if version.is_none() {
             println!("cargo:warning=xmake version could not be determined, it might not work");
             return;
@@ -878,26 +875,21 @@ impl Config {
         self.cache.xmake_version = Some(version);
     }
 
-    fn xmake_command(&mut self) -> Command {
-        let mut cmd = Command::new(self.xmake_executable());
-        cmd.current_dir(self.path.as_path());
+    fn xmake_command(&mut self) -> XmakeCommand {
+        let mut cmd = XmakeCommand::new();
 
         // Add envs
         for &(ref k, ref v) in self.env.iter().chain(&self.env) {
             cmd.env(k, v);
         }
 
-    
-        // Set the project dir env for xmake
-        cmd.current_dir(self.path.as_path());
-        // To no have the color output
-        cmd.env("XMAKE_THEME", "plain");
-        cmd
-    }
+        if self.verbose {
+            cmd.verbose(true);
+        }
 
-    fn xmake_executable(&mut self) -> String {
-        self.getenv_os("XMAKE")
-            .unwrap_or_else(|| String::from("xmake"))
+        cmd.project_dir(self.path.as_path());
+
+        cmd
     }
 
     fn getenv_os(&mut self, v: &str) -> Option<String> {
@@ -910,53 +902,6 @@ impl Config {
         self.cache.env.insert(v.to_string(), r.clone());
         r
     }
-}
-
-fn run(cmd: &mut Command, program: &str, full_output: bool) -> Option<String> {
-    println!("running: {:?}", cmd);
-    let mut child = match cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn() {
-        Ok(child) => child,
-        Err(ref e) if e.kind() == ErrorKind::NotFound => {
-            fail(&format!(
-                "failed to execute command: {}\nis `{}` not installed?",
-                e, program
-            ));
-        }
-        Err(e) => fail(&format!("failed to execute command: {}", e)),
-    };
-
-    let mut output = String::new();
-    let mut take_output = false;
-
-    // Read stdout in real-time
-    if let Some(stdout) = child.stdout.take() {
-        let reader = BufReader::new(stdout);
-        for line in reader.lines() {
-            if let Ok(line) = line {    
-                // Print stdout for logging
-                println!("{}", line);
-
-                take_output &=  !line.starts_with("__xmakers_start__");                
-                if take_output || full_output {
-                    output.push_str(line.as_str());
-                    output.push('\n');
-                }
-                take_output |= line.starts_with("__xmakers_start__");        
-            }
-        }
-    }
-
-    // Wait for the command to complete
-    let status = child.wait().expect("failed to wait on child process");
-
-    if !status.success() {
-        fail(&format!(
-            "command did not execute successfully, got: {}",
-            status
-        ));
-    }
-
-    Some(output)
 }
 
 trait CommaSeparated {
@@ -1088,6 +1033,175 @@ fn fail(s: &str) -> ! {
     panic!("\n{}\n\nbuild script failed, must exit now", s)
 }
 
+struct XmakeCommand {
+    verbose: bool,
+    diagnosis: bool,
+    raw_output: bool,
+    command: Command,
+    args: Vec<std::ffi::OsString>,
+    task: Option<String>,
+    project_dir: Option<PathBuf>,
+}
+
+impl XmakeCommand {
+    /// Create a new XmakeCommand instance.
+    fn new() -> Self {
+        let mut command = Command::new(Self::xmake_executable());
+        command.env("XMAKE_THEME", "plain");
+        Self {
+            verbose: false,
+            diagnosis: false,
+            raw_output: false,
+            task: None,
+            command: command,
+            args: Vec::new(),
+            project_dir: None,
+        }
+    }
+
+    fn xmake_executable() -> String {
+        env::var("XMAKE").unwrap_or(String::from("xmake"))
+    }
+
+    /// Same as [`Command::arg`]
+    pub fn arg<S: AsRef<std::ffi::OsStr>>(&mut self, arg: S) -> &mut Self {
+        self.args.push(arg.as_ref().to_os_string());
+        self
+    }
+
+    /// Same as [`Command::env`]
+    pub fn env<K, V>(&mut self, key: K, val: V) -> &mut Self
+    where
+        K: AsRef<std::ffi::OsStr>,
+        V: AsRef<std::ffi::OsStr>,
+    {
+        self.command.env(key, val);
+        self
+    }
+
+    /// Enable/disable verbose mode of xmake (default is false).
+    /// Correspond to the -v flag.
+    pub fn verbose(&mut self, value: bool) -> &mut Self {
+        self.verbose = value;
+        self
+    }
+
+    // Enable/disable diagnosis mode of xmake (default is false).
+    /// Correspond to the -D flag.
+    pub fn diagnosis(&mut self, value: bool) -> &mut Self {
+        self.diagnosis = value;
+        self
+    }
+
+    /// Sets the xmake tasks to run.
+    pub fn task<S: Into<String>>(&mut self, task: S) -> &mut Self {
+        self.task = Some(task.into());
+        self
+    }
+
+    /// Sets the project directory.
+    pub fn project_dir<P: AsRef<Path>>(&mut self, project_dir: P) -> &mut Self {
+        use crate::path_clean::PathClean;
+        self.project_dir = Some(project_dir.as_ref().to_path_buf().clean());
+        self
+    }
+
+    /// Controls whether to capture raw, unfiltered command output (default is false).
+    ///
+    /// When enabled (true):
+    /// - All command output is captured and returned
+    ///
+    /// When disabled (false, default):
+    /// - Only captures output between special markers (`__xmakers_start__` and `__xmakers_end__`)
+    /// - Filters out diagnostic and setup information
+    ///
+    /// This setting is passed to the [`run`] function to control output processing.
+    pub fn raw_output(&mut self, value: bool) -> &mut Self {
+        self.raw_output = value;
+        self
+    }
+
+    /// Run the command and return the output as a string.
+    /// Alias of [`run`]
+    pub fn run(&mut self) -> Option<String> {
+        if let Some(task) = &self.task {
+            self.command.arg(task);
+        }
+
+        if self.verbose {
+            self.command.arg("-v");
+        }
+        if self.diagnosis {
+            self.command.arg("-D");
+        }
+
+        if let Some(project_dir) = &self.project_dir {
+            // Project directory are evaluated like this:                                 Search priority:
+            // 1. The Given Command Argument
+            // 2. The Environment Variable: XMAKE_PROJECT_DIR
+            // 3. The Current Directory
+            //
+            // The env doesn't work here because it is global, so it breaks
+            // packages. Just to be sure set both argument and current directory.
+            let project_dir = project_dir.as_path();
+            self.command.current_dir(project_dir);
+            self.command.arg("-P").arg(project_dir);
+        }
+
+        for arg in &self.args {
+            self.command.arg(arg);
+        }
+        run(&mut self.command, "xmake", self.raw_output)
+    }
+}
+
+fn run(cmd: &mut Command, program: &str, raw_output: bool) -> Option<String> {
+    println!("running: {:?}", cmd);
+    let mut child = match cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn() {
+        Ok(child) => child,
+        Err(ref e) if e.kind() == ErrorKind::NotFound => {
+            fail(&format!(
+                "failed to execute command: {}\nis `{}` not installed?",
+                e, program
+            ));
+        }
+        Err(e) => fail(&format!("failed to execute command: {}", e)),
+    };
+
+    let mut output = String::new();
+    let mut take_output = false;
+
+    // Read stdout in real-time
+    if let Some(stdout) = child.stdout.take() {
+        let reader = BufReader::new(stdout);
+        for line in reader.lines() {
+            if let Ok(line) = line {
+                // Print stdout for logging
+                println!("{}", line);
+
+                take_output &= !line.starts_with("__xmakers_start__");
+                if take_output || raw_output {
+                    output.push_str(line.as_str());
+                    output.push('\n');
+                }
+                take_output |= line.starts_with("__xmakers_start__");
+            }
+        }
+    }
+
+    // Wait for the command to complete
+    let status = child.wait().expect("failed to wait on child process");
+
+    if !status.success() {
+        fail(&format!(
+            "command did not execute successfully, got: {}",
+            status
+        ));
+    }
+
+    Some(output)
+}
+
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct Version {
     major: u32,
@@ -1108,6 +1222,7 @@ impl Version {
         // As of v2.9.5, the format of the version output is "xmake v2.9.5+dev.478972cd9, A cross-platform build utility based on Lua".
         // ```
         // $ xmake --version
+        // xmake v2.9.8+HEAD.13fc39238, A cross-platform build utility based on Lua
         // Copyright (C) 2015-present Ruki Wang, tboox.org, xmake.io
         //                         _
         //    __  ___ __  __  __ _| | ______
@@ -1137,15 +1252,105 @@ impl Version {
         Some(Version::new(major, minor, patch))
     }
 
-    fn from_command(executable: &str) -> Option<Self> {
-        let output = run(
-            Command::new(executable)
-                .arg("--version")
-                .env("XMAKE_THEME", "plain"),
-            "xmake",
-            true
-        )?;
+    fn from_command() -> Option<Self> {
+        let output = XmakeCommand::new()
+            .raw_output(true)
+            .arg("--version")
+            .run()?;
         Self::parse(output.as_str())
+    }
+}
+
+mod path_clean {
+    // Taken form the path-clean crate.
+    // Crates.io: https://crates.io/crates/path-clean
+    // GitHub: https://github.com/danreeves/path-clean
+
+    //! `path-clean` is a Rust port of the the `cleanname` procedure from the Plan 9 C library, and is similar to
+    //! [`path.Clean`](https://golang.org/pkg/path/#Clean) from the Go standard library. It works as follows:
+    //!
+    //! 1. Reduce multiple slashes to a single slash.
+    //! 2. Eliminate `.` path name elements (the current directory).
+    //! 3. Eliminate `..` path name elements (the parent directory) and the non-`.` non-`..`, element that precedes them.
+    //! 4. Eliminate `..` elements that begin a rooted path, that is, replace `/..` by `/` at the beginning of a path.
+    //! 5. Leave intact `..` elements that begin a non-rooted path.
+    //!
+    //! If the result of this process is an empty string, return the string `"."`, representing the current directory.
+    //!
+    //! It performs this transform lexically, without touching the filesystem. Therefore it doesn't do
+    //! any symlink resolution or absolute path resolution. For more information you can see ["Getting Dot-Dot
+    //! Right"](https://9p.io/sys/doc/lexnames.html).
+    //!
+    //! For convenience, the [`PathClean`] trait is exposed and comes implemented for [`std::path::{Path, PathBuf}`].
+    //!
+    //! ```rust
+    //! use std::path::PathBuf;
+    //! use path_clean::{clean, PathClean};
+    //! assert_eq!(clean("hello/world/.."), PathBuf::from("hello"));
+    //! assert_eq!(
+    //!     PathBuf::from("/test/../path/").clean(),
+    //!     PathBuf::from("/path")
+    //! );
+    //! ```
+    #![forbid(unsafe_code)]
+
+    use std::path::{Component, Path, PathBuf};
+
+    /// The Clean trait implements a `clean` method.
+    pub(super) trait PathClean {
+        fn clean(&self) -> PathBuf;
+    }
+
+    /// PathClean implemented for `Path`
+    impl PathClean for Path {
+        fn clean(&self) -> PathBuf {
+            clean(self)
+        }
+    }
+
+    /// PathClean implemented for `PathBuf`
+    impl PathClean for PathBuf {
+        fn clean(&self) -> PathBuf {
+            clean(self)
+        }
+    }
+
+    /// The core implementation. It performs the following, lexically:
+    /// 1. Reduce multiple slashes to a single slash.
+    /// 2. Eliminate `.` path name elements (the current directory).
+    /// 3. Eliminate `..` path name elements (the parent directory) and the non-`.` non-`..`, element that precedes them.
+    /// 4. Eliminate `..` elements that begin a rooted path, that is, replace `/..` by `/` at the beginning of a path.
+    /// 5. Leave intact `..` elements that begin a non-rooted path.
+    ///
+    /// If the result of this process is an empty string, return the string `"."`, representing the current directory.
+    pub(super) fn clean<P>(path: P) -> PathBuf
+    where
+        P: AsRef<Path>,
+    {
+        let mut out = Vec::new();
+
+        for comp in path.as_ref().components() {
+            match comp {
+                Component::CurDir => (),
+                Component::ParentDir => match out.last() {
+                    Some(Component::RootDir) => (),
+                    Some(Component::Normal(_)) => {
+                        out.pop();
+                    }
+                    None
+                    | Some(Component::CurDir)
+                    | Some(Component::ParentDir)
+                    | Some(Component::Prefix(_)) => out.push(comp),
+                },
+                comp => out.push(comp),
+            }
+        }
+
+        if !out.is_empty() {
+            out.iter().collect()
+        } else {
+            PathBuf::from(".")
+        }
     }
 }
 
@@ -1153,7 +1358,9 @@ impl Version {
 mod tests {
     use std::path::PathBuf;
 
-    use crate::{parse_field, parse_info_pairs, BuildInfo, Link, LinkKind, ParsingError};
+    use crate::{
+        parse_field, parse_info_pairs, BuildInfo, Link, LinkKind, ParsingError, XmakeCommand,
+    };
 
     #[test]
     fn parse_line() {
@@ -1223,7 +1430,9 @@ mod tests {
             Link::new("linkA", LinkKind::Static),
             Link::new("linkB", LinkKind::Dynamic),
         ];
-        let expected_directories = ["path/to/libA", "path/to/libB", "path\\to\\libC"].map(PathBuf::from).to_vec();
+        let expected_directories = ["path/to/libA", "path/to/libB", "path\\to\\libC"]
+            .map(PathBuf::from)
+            .to_vec();
         let expected_cxx = true;
         let expected_stl = false;
 
