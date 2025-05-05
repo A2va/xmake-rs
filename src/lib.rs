@@ -400,18 +400,13 @@ impl Config {
         // In case of xmake is waiting to download something
         cmd.arg("--yes");
 
-        // Get absolute path to the crate root
-        let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let script_file = crate_root.join("src").join("build.lua");
-        cmd.arg(script_file);
-
         if let Some(targets) = &self.targets {
             // :: is used to handle namespaces in xmake but it interferes with the env separator
             // on linux, so we use a different separator
             cmd.env("XMAKERS_TARGETS", targets.replace("::", "||"));
         }
 
-        cmd.run();
+        cmd.run_script("build.lua");
 
         let dst = self.install();
         let plat = self.get_xmake_plat();
@@ -635,31 +630,19 @@ impl Config {
     /// Install target in OUT_DIR.
     fn install(&mut self) -> PathBuf {
         let mut cmd = self.xmake_command();
-        cmd.task("lua");
 
         let dst = self
             .out_dir
             .clone()
             .unwrap_or_else(|| PathBuf::from(getenv_unwrap("OUT_DIR")));
 
-        // Get absolute path to the crate root
-        let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let script_file = crate_root.join("src").join("install.lua");
-        cmd.arg(script_file);
-
         cmd.env("XMAKERS_INSTALL_DIR", dst.clone());
-        cmd.run();
+        cmd.run_script("install.lua");
         dst
     }
 
     fn get_build_info(&mut self) -> Option<BuildInfo> {
         let mut cmd = self.xmake_command();
-        cmd.task("lua");
-
-        // Get absolute path to the crate root
-        let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let script_file = crate_root.join("src").join("build_info.lua");
-        cmd.arg(script_file);
 
         if let Some(targets) = &self.targets {
             // :: is used to handle namespaces in xmake but it interferes with the env separator
@@ -667,7 +650,7 @@ impl Config {
             cmd.env("XMAKERS_TARGETS", targets.replace("::", "||"));
         }
 
-        if let Some(output) = cmd.run() {
+        if let Some(output) = cmd.run_script("build_info.lua") {
             return output.parse().ok();
         }
         None
@@ -1136,7 +1119,7 @@ impl XmakeCommand {
         }
 
         if let Some(project_dir) = &self.project_dir {
-            // Project directory are evaluated like this:                                 Search priority:
+            // Project directory are evaluated like this:
             // 1. The Given Command Argument
             // 2. The Environment Variable: XMAKE_PROJECT_DIR
             // 3. The Current Directory
@@ -1152,6 +1135,22 @@ impl XmakeCommand {
             self.command.arg(arg);
         }
         run(&mut self.command, "xmake", self.raw_output)
+    }
+
+    /// Execute a lua script, located in the src folder of this crate.
+    /// Note that this method overide any previously configured taks to be `lua`.
+    pub fn run_script<S: AsRef<str>>(&mut self, script: S) -> Option<String> {
+        let script  = script.as_ref();
+
+        // Get absolute path to the crate root
+        let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let script_file = crate_root.join("src").join(script);
+
+        // Script to execute are positional argument so always last
+        self.args.push(script_file.into());
+        self.task("lua"); // For the task to be lua
+
+        self.run()
     }
 }
 
@@ -1266,54 +1265,24 @@ mod path_clean {
     // Crates.io: https://crates.io/crates/path-clean
     // GitHub: https://github.com/danreeves/path-clean
 
-    //! `path-clean` is a Rust port of the the `cleanname` procedure from the Plan 9 C library, and is similar to
-    //! [`path.Clean`](https://golang.org/pkg/path/#Clean) from the Go standard library. It works as follows:
-    //!
-    //! 1. Reduce multiple slashes to a single slash.
-    //! 2. Eliminate `.` path name elements (the current directory).
-    //! 3. Eliminate `..` path name elements (the parent directory) and the non-`.` non-`..`, element that precedes them.
-    //! 4. Eliminate `..` elements that begin a rooted path, that is, replace `/..` by `/` at the beginning of a path.
-    //! 5. Leave intact `..` elements that begin a non-rooted path.
-    //!
-    //! If the result of this process is an empty string, return the string `"."`, representing the current directory.
-    //!
-    //! It performs this transform lexically, without touching the filesystem. Therefore it doesn't do
-    //! any symlink resolution or absolute path resolution. For more information you can see ["Getting Dot-Dot
-    //! Right"](https://9p.io/sys/doc/lexnames.html).
-    //!
-    //! For convenience, the [`PathClean`] trait is exposed and comes implemented for [`std::path::{Path, PathBuf}`].
-    //!
-    #![forbid(unsafe_code)]
 
     use std::path::{Component, Path, PathBuf};
-
-    /// The Clean trait implements a `clean` method.
     pub(super) trait PathClean {
         fn clean(&self) -> PathBuf;
     }
 
-    /// PathClean implemented for `Path`
     impl PathClean for Path {
         fn clean(&self) -> PathBuf {
             clean(self)
         }
     }
 
-    /// PathClean implemented for `PathBuf`
     impl PathClean for PathBuf {
         fn clean(&self) -> PathBuf {
             clean(self)
         }
     }
 
-    /// The core implementation. It performs the following, lexically:
-    /// 1. Reduce multiple slashes to a single slash.
-    /// 2. Eliminate `.` path name elements (the current directory).
-    /// 3. Eliminate `..` path name elements (the parent directory) and the non-`.` non-`..`, element that precedes them.
-    /// 4. Eliminate `..` elements that begin a rooted path, that is, replace `/..` by `/` at the beginning of a path.
-    /// 5. Leave intact `..` elements that begin a non-rooted path.
-    ///
-    /// If the result of this process is an empty string, return the string `"."`, representing the current directory.
     pub(super) fn clean<P>(path: P) -> PathBuf
     where
         P: AsRef<Path>,
