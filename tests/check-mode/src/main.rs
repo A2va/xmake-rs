@@ -1,6 +1,6 @@
 extern crate libc;
 
-extern {
+extern "C" {
     fn mode() -> libc::c_int;
 }
 
