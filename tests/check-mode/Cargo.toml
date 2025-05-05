@@ -1,8 +1,6 @@
 [package]
 name = "check-mode"
 authors = ["A2va"]
-build = "build.rs"
-
 
 [dependencies]
 libc = "0.2.169"

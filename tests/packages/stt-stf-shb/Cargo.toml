@@ -1,7 +1,6 @@
 [package]
 name = "stt-stf-shb"
 authors = ["A2va"]
-build = "build.rs"
 
 [dependencies]
 libc = "0.2.169"
