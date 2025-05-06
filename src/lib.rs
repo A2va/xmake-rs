@@ -690,6 +690,10 @@ impl Config {
         match platform.as_str() {
             "linux" => Some(format!("stdc++_{}", kind)),
             "android" => Some(format!("c++_{}", kind)),
+            "windows" => {
+                let msvc_runtime = if static_crt { "MT" } else { "MD" };
+                Some(msvc_runtime.to_owned())
+            },
             _ => None
         }
     }
@@ -864,6 +868,8 @@ impl Config {
         if self.verbose {
             cmd.verbose(true);
         }
+
+        cmd.diagnosis(true);
 
         cmd.project_dir(self.path.as_path());
 
