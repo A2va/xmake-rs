@@ -272,8 +272,7 @@ impl Config {
     }
 
     /// Sets the xmake targets for this compilation.
-    /// Note that is different from rust target (os and arch), an xmake target
-    /// can be binary or a library.
+    /// Note: This is different from rust target (os and arch).
     /// ```
     /// use xmake::Config;
     /// let mut config = xmake::Config::new("libfoo");
@@ -302,7 +301,7 @@ impl Config {
 
     /// Configures if the C++ standard library should be linked.
     ///
-    /// This option defaults to `true`.
+    /// This option defaults to `false`.
     /// If false and no runtimes options is set, the runtime flag passed to xmake configuration will be not set at all.
     pub fn no_stl_link(&mut self, value: bool) -> &mut Config {
         self.no_stl_link = value;
@@ -395,7 +394,6 @@ impl Config {
         self.config();
 
         let mut cmd = self.xmake_command();
-        cmd.task("lua");
 
         // In case of xmake is waiting to download something
         cmd.arg("--yes");
@@ -408,130 +406,20 @@ impl Config {
 
         cmd.run_script("build.lua");
 
-        let dst = self.install();
-        let plat = self.get_xmake_plat();
 
         if let Some(info) = self.get_build_info() {
             self.cache.build_info = info;
         }
 
         if self.auto_link {
-            let build_info = &mut self.cache.build_info;
-
-            for directory in build_info.linkdirs() {
-                // Reference: https://doc.rust-lang.org/cargo/reference/build-scripts.html#rustc-link-search
-                println!("cargo:rustc-link-search=all={}", directory.display());
-            }
-
-            // Special link search path for dynamic libraries, because
-            // the path are appended to the dynamic library search path environment variable
-            // only if there are within OUT_DIR
-            let linux_shared_libs_folder = dst.join("lib");
-            println!(
-                "cargo:rustc-link-search=native={}",
-                linux_shared_libs_folder.display()
-            );
-            println!(
-                "cargo:rustc-link-search=native={}",
-                dst.join("bin").display()
-            );
-
-            build_info.linkdirs.push(linux_shared_libs_folder.clone());
-            build_info.linkdirs.push(dst.join("bin"));
-
-            let mut shared_libs = HashSet::new();
-
-            for link in build_info.links() {
-                match link.kind() {
-                    LinkKind::Static => println!("cargo:rustc-link-lib=static={}", link.name()),
-                    LinkKind::Dynamic => {
-                        println!("cargo:rustc-link-lib=dylib={}", link.name());
-                        shared_libs.insert(link.name());
-                    }
-                    LinkKind::Framework if plat == "macosx" => {
-                        println!("cargo:rustc-link-lib=framework={}", link.name())
-                    }
-                    // For rust, framework type is only for macosx but can be used on multiple system in xmake
-                    // so fallback to the system libraries case
-                    LinkKind::System | LinkKind::Framework => {
-                        println!("cargo:rustc-link-lib={}", link.name())
-                    }
-                    // Let try cargo handle the rest
-                    LinkKind::Unknown => println!("cargo:rustc-link-lib={}", link.name()),
-                }
-            }
-
-            // In some cases, xmake does not include all the shared libraries in the link cmd (for example, in the sht-shf-shb test),
-            // leading to build failures on the rust side because it expected to link them, so the solution is to fetches all the libs from the install directory.
-            // Since I cannot know the real order of the links, this can cause some problems on some projects.
-            if plat == "linux" && linux_shared_libs_folder.exists() {
-                let files = std::fs::read_dir(dst.join("lib")).unwrap();
-                for entry in files {
-                    if let Ok(file) = entry {
-                        let file_name = file.file_name();
-                        let file_name = file_name.to_str().unwrap();
-                        if file_name.ends_with(".so") || file_name.matches(r"\.so\.\d+").count() > 0
-                        {
-                            if let Some(lib_name) = file_name.strip_prefix("lib") {
-                                let name = if let Some(dot_pos) = lib_name.find(".so") {
-                                    &lib_name[..dot_pos]
-                                } else {
-                                    lib_name
-                                };
-
-                                if !shared_libs.contains(name) {
-                                    println!("cargo:rustc-link-lib=dylib={}", name);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            if !self.no_stl_link && self.build_info().use_stl() {
-                if let Some(runtimes) = &self.runtimes {
-                    let plat = self.cache.plat();
-
-                    let stl: Option<&[&str]> = match plat.as_str() {
-                        "linux" => {
-                            Some(&["c++_static", "c++_shared", "stdc++_static", "stdc++_shared"])
-                        }
-                        "android" => Some(&[
-                            "c++_static",
-                            "c++_shared",
-                            "gnustl_static",
-                            "gnustl_shared",
-                            "stlport_static",
-                            "stlport_shared",
-                        ]),
-                        _ => None,
-                    };
-
-                    if let Some(stl) = stl {
-                        // Try to match the selected runtime with the available runtimes
-                        for runtime in runtimes.split(",") {
-                            if stl.contains(&runtime) {
-                                let (name, _) = runtime.split_once("_").unwrap();
-                                let kind = match runtime.contains("static") {
-                                    true => "static",
-                                    false => "dylib",
-                                };
-                                println!(r"cargo:rustc-link-lib={}={}", kind, name);
-                                break;
-                            }
-                        }
-                    }
-                } else {
-                    let runtime = self.get_runtimes();
-                    let (name, _) = runtime.split_once("_").unwrap();
-                    let kind = match runtime.contains("static") {
-                        true => "static",
-                        false => "dylib",
-                    };
-                    println!(r"cargo:rustc-link-lib={}={}", kind, name);
-                }
-            }
+            self.link();
         }
+    }
+
+    /// Returns a reference to the `BuildInfo` associated with this build.
+    /// <div class="warning">Note: Accessing this information before the build step will result in non-representative data.</div>
+    pub fn build_info(&self) -> &BuildInfo {
+        &self.cache.build_info
     }
 
     // Run the configuration with all the configured
@@ -591,7 +479,7 @@ impl Config {
 
                 // Attempt to find the cross compilation sdk
                 // Let cc find it for us
-                // Usually a compiler is inside bin folder and xmake wait the entire
+                // Usually a compiler is inside bin folder and xmake expect the entire
                 // sdk folder
                 let compiler = c_cfg.get_compiler();
                 let sdk = compiler.path().ancestors().nth(2).unwrap();
@@ -624,10 +512,125 @@ impl Config {
         cmd.run();
     }
 
-    /// Returns a reference to the `BuildInfo` associated with this build.
-    /// <div class="warning">Note: Accessing this information before the build step will result in non-representative data.</div>
-    pub fn build_info(&self) -> &BuildInfo {
-        &self.cache.build_info
+    fn link(&mut self) {
+        let dst = self.install();
+        let plat = self.get_xmake_plat();
+        
+        let build_info = &mut self.cache.build_info;
+
+        for directory in build_info.linkdirs() {
+            // Reference: https://doc.rust-lang.org/cargo/reference/build-scripts.html#rustc-link-search
+            println!("cargo:rustc-link-search=all={}", directory.display());
+        }
+
+        // Special link search path for dynamic libraries, because
+        // the path are appended to the dynamic library search path environment variable
+        // only if there are within OUT_DIR
+        let linux_shared_libs_folder = dst.join("lib");
+        println!(
+            "cargo:rustc-link-search=native={}",
+            linux_shared_libs_folder.display()
+        );
+        println!(
+            "cargo:rustc-link-search=native={}",
+            dst.join("bin").display()
+        );
+
+        build_info.linkdirs.push(linux_shared_libs_folder.clone());
+        build_info.linkdirs.push(dst.join("bin"));
+
+        let mut shared_libs = HashSet::new();
+
+        for link in build_info.links() {
+            match link.kind() {
+                LinkKind::Static => println!("cargo:rustc-link-lib=static={}", link.name()),
+                LinkKind::Dynamic => {
+                    println!("cargo:rustc-link-lib=dylib={}", link.name());
+                    shared_libs.insert(link.name());
+                }
+                LinkKind::Framework if plat == "macosx" => {
+                    println!("cargo:rustc-link-lib=framework={}", link.name())
+                }
+                // For rust, framework type is only for macosx but can be used on multiple system in xmake
+                // so fallback to the system libraries case
+                LinkKind::System | LinkKind::Framework => {
+                    println!("cargo:rustc-link-lib={}", link.name())
+                }
+                // Let try cargo handle the rest
+                LinkKind::Unknown => println!("cargo:rustc-link-lib={}", link.name()),
+            }
+        }
+
+        // In some cases, xmake does not include all the shared libraries in the link cmd (for example, in the sht-shf-shb test),
+        // leading to build failures on the rust side because it expected to link them, so the solution is to fetches all the libs from the install directory.
+        // Since I cannot know the real order of the links, this can cause some problems on some projects.
+        if plat == "linux" && linux_shared_libs_folder.exists() {
+            let files = std::fs::read_dir(dst.join("lib")).unwrap();
+            for entry in files {
+                if let Ok(file) = entry {
+                    let file_name = file.file_name();
+                    let file_name = file_name.to_str().unwrap();
+                    if file_name.ends_with(".so") || file_name.matches(r"\.so\.\d+").count() > 0 {
+                        if let Some(lib_name) = file_name.strip_prefix("lib") {
+                            let name = if let Some(dot_pos) = lib_name.find(".so") {
+                                &lib_name[..dot_pos]
+                            } else {
+                                lib_name
+                            };
+
+                            if !shared_libs.contains(name) {
+                                println!("cargo:rustc-link-lib=dylib={}", name);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if !self.no_stl_link && self.build_info().use_stl() {
+            if let Some(runtimes) = &self.runtimes {
+                let plat = self.cache.plat();
+
+                let stl: Option<&[&str]> = match plat.as_str() {
+                    "linux" => {
+                        Some(&["c++_static", "c++_shared", "stdc++_static", "stdc++_shared"])
+                    }
+                    "android" => Some(&[
+                        "c++_static",
+                        "c++_shared",
+                        "gnustl_static",
+                        "gnustl_shared",
+                        "stlport_static",
+                        "stlport_shared",
+                    ]),
+                    _ => None,
+                };
+
+                if let Some(stl) = stl {
+                    // Try to match the selected runtime with the available runtimes
+                    for runtime in runtimes.split(",") {
+                        if stl.contains(&runtime) {
+                            let (name, _) = runtime.split_once("_").unwrap();
+                            let kind = match runtime.contains("static") {
+                                true => "static",
+                                false => "dylib",
+                            };
+                            println!(r"cargo:rustc-link-lib={}={}", kind, name);
+                            break;
+                        }
+                    }
+                }
+            } else {
+                if let Some(runtime) = self.get_runtimes() {
+                    let (name, _) = runtime.split_once("_").unwrap();
+                    let kind = match runtime.contains("static") {
+                        true => "static",
+                        false => "dylib",
+                    };
+                    println!(r"cargo:rustc-link-lib={}={}", kind, name);
+                }
+            }
+        }
     }
 
     /// Install target in OUT_DIR.
@@ -1132,7 +1135,7 @@ impl XmakeCommand {
     /// Execute a lua script, located in the src folder of this crate.
     /// Note that this method overide any previously configured taks to be `lua`.
     pub fn run_script<S: AsRef<str>>(&mut self, script: S) -> Option<String> {
-        let script  = script.as_ref();
+        let script = script.as_ref();
 
         // Get absolute path to the crate root
         let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -1256,7 +1259,6 @@ mod path_clean {
     // Taken form the path-clean crate.
     // Crates.io: https://crates.io/crates/path-clean
     // GitHub: https://github.com/danreeves/path-clean
-
 
     use std::path::{Component, Path, PathBuf};
     pub(super) trait PathClean {
