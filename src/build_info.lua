@@ -258,7 +258,7 @@ function _stl_usage(target, sourcebatch, opt)
     local modules_cache = localcache.cache("cxxmodules")
 
     -- collect the files that use the stl previously
-    local files = xmake_rs:get2("stl", target:name()) and not opt.recheck or {}
+    local files = opt.recheck and xmake_rs:get2("stl", target:name()) or {}
     files = hashset.from(files)
 
     -- wrap the on_changed callback
