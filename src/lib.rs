@@ -602,10 +602,13 @@ impl Config {
             }
         }
 
+        // Configure the runtimes
         if let Some(runtimes) = &self.runtimes {
             cmd.arg(format!("--runtimes={}", runtimes));
-        } else if !self.no_stl_link {
-            cmd.arg(format!("--runtimes={}", self.get_runtimes()));
+        } else if let Some(runtimes) = self.get_runtimes() {
+            if !self.no_stl_link {
+                cmd.arg(format!("--runtimes={}", runtimes));
+            }
         }
 
         // Compilation mode: release, debug...
@@ -668,34 +671,23 @@ impl Config {
     }
 
     // In case no runtimes has been set, get one
-    fn get_runtimes(&mut self) -> String {
+    fn get_runtimes(&mut self) -> Option<String> {
         // These runtimes may not be the most appropriate for each platform, but
         // taken the GNU standard libary is the most common one on linux, and same for
         // the clang equivalent on android.
         // TODO Explore which runtimes is more approriate for macosx
-        let determine_runtime = |plat: &str| -> Option<&str> {
-            match plat {
-                "linux" => Some("stdc++"),
-                "android" => Some("c++"),
-                _ => None,
-            }
-        };
-
         let static_crt = self.get_static_crt();
-        let msvc_runtime = match static_crt {
-            true => "MT",
-            false => "MD",
-        };
+        let platform = self.get_xmake_plat();
 
         let kind = match static_crt {
             true => "static",
             false => "shared",
         };
 
-        let runtime = determine_runtime(self.get_xmake_plat().as_str());
-        match runtime {
-            Some(r) => format!("{}_{}", r, kind),
-            None => msvc_runtime.to_owned(),
+        match platform.as_str() {
+            "linux" => Some(format!("stdc++_{}", kind)),
+            "android" => Some(format!("c++_{}", kind)),
+            _ => None
         }
     }
 
