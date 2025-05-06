@@ -288,6 +288,7 @@ end
 
 -- get the the true target name with namespace
 function get_namespace_target(target)
+    -- TODO With xmake v3 replace by target:fullname()
     if (not is_namespace_supported()) and (target:namespace() ~= nil) then
         raise("target(%s):  target is in a namespace, but xmake is neither in v3 nor the compatibility.version policy was set.", name)
     end
