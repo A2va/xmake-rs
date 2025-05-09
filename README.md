@@ -11,6 +11,19 @@ xmake = "0.3.0"
 
 The XMake executable is assumed to be `xmake` unless the `XMAKE`
 environmental variable is set.
+There is some examples in the `tests` folder of the repo. 
+
+## Difference from cmake-rs
+
+Generally speaking, xmake-rs is very similar to cmake-rs, but there are two advantages:
+* Xmake is known to be simpler than CMake, and includes an integrated package manager, making it easier to integrate dependencies...
+* With cmake-rs you have to configure your `rustc-link-lib` and `rustc-link-search` yourself. This is not necessary with xmake-rs.
+
+Broadly speaking, xmake-rs is very similar to cmake-rs, but there are two advantages:
+* Xmake is known to be simpler than cmake, with a built-in package manager so using is part
+* Xmake-rs supports automatic linking, so it is no longer necessary to use `rustc-link-lib' and `rustc-link-search' as in cmake-rs.
+
+## Cross-Compilation Support
 
 If you need to cross-compile your project, xmake provides a built-in package manager that can set up the emscripten or Android NDK toolchains. The first two lines of the code snippet below enter a single package environment, overwriting the previous environment. However, the last line enters both the emscripten and NDK environments simultaneously.
 ```
@@ -21,5 +34,3 @@ xrepo env -b "emscripten, ndk" shell
 After executing one of these commands, xmake will automatically detect either the emscripten or NDK toolchain.
 
 If you prefer to use your own toolchain, you can set either the ANDROID_NDK_HOME or EMSCRIPTEN_HOME environment variables to specify the path to the corresponding toolchain.
-
-An example is available in the `test-crate` folder of the repo.
