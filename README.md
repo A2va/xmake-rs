@@ -15,10 +15,6 @@ There is some examples in the `tests` folder of the repo.
 
 ## Difference from cmake-rs
 
-Generally speaking, xmake-rs is very similar to cmake-rs, but there are two advantages:
-* Xmake is known to be simpler than CMake, and includes an integrated package manager, making it easier to integrate dependencies...
-* With cmake-rs you have to configure your `rustc-link-lib` and `rustc-link-search` yourself. This is not necessary with xmake-rs.
-
 Broadly speaking, xmake-rs is very similar to cmake-rs, but there are two advantages:
 * Xmake is known to be simpler than cmake, with a built-in package manager so using is part
 * Xmake-rs supports automatic linking, so it is no longer necessary to use `rustc-link-lib' and `rustc-link-search' as in cmake-rs.
