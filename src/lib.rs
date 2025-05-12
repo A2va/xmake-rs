@@ -62,6 +62,16 @@ pub enum LinkKind {
     Unknown,
 }
 
+/// Represents the source when querying some information from [`BuildInfo`].
+pub enum Source {
+    /// Coming from an xmake target
+    Target,
+    /// Coming from an xmake package
+    Package,
+    /// Both of them
+    Both,
+}
+
 /// Represents a single linked library.
 ///
 /// The `Link` struct contains information about a single linked library, including its name and the kind of linkage.
@@ -82,6 +92,10 @@ pub struct BuildInfo {
     linkdirs: Vec<PathBuf>,
     /// The individual linked libraries.
     links: Vec<Link>,
+    /// All the includirs coming from the packages
+    includedirs_package: HashMap<String, Vec<PathBuf>>,
+    /// All the includirs coming from the targets
+    includedirs_target: HashMap<String, Vec<PathBuf>>,
     /// Whether the build uses the C++.
     use_cxx: bool,
     /// Whether the build uses the C++ standard library.
@@ -142,6 +156,29 @@ impl BuildInfo {
     pub fn use_stl(&self) -> bool {
         self.use_stl
     }
+
+    /// Retrieves the include directories for the specific target/package given it's name.
+    /// If `*` is given as a name all the includedirs will be returned.
+    pub fn includedirs<S: AsRef<str>>(&self, source: Source, name: S) -> Vec<PathBuf> {
+        let name = name.as_ref();
+        let mut result = Vec::new();
+
+        let sources = match source {
+            Source::Target => vec![&self.includedirs_target],
+            Source::Package => vec![&self.includedirs_package],
+            Source::Both => vec![&self.includedirs_target, &self.includedirs_package],
+        };
+
+        for map in sources {
+            if name == "*" {
+                result.extend(map.values().cloned().flatten());
+            } else if let Some(dirs) = map.get(name) {
+                result.extend(dirs.clone());
+            }
+        }
+
+        result
+    }
 }
 
 impl FromStr for LinkKind {
@@ -181,17 +218,33 @@ impl FromStr for BuildInfo {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let map = parse_info_pairs(s);
 
-        let directories = parse_field::<Vec<PathBuf>>(&map, "linkdirs")?;
-        let links = parse_field::<Vec<Link>>(&map, "links")?;
+        let directories: Vec<PathBuf> = parse_field(&map, "linkdirs")?;
+        let links: Vec<Link> = parse_field(&map, "links")?;
 
-        let use_cxx = parse_field::<bool>(&map, "cxx_used")?;
-        let use_stl = parse_field::<bool>(&map, "stl_used")?;
+        let use_cxx: bool = parse_field(&map, "cxx_used")?;
+        let use_stl: bool = parse_field(&map, "stl_used")?;
+
+        let packages = subkeys_of(&map, "includedirs_package");
+        let mut includedirs_package = HashMap::new();
+        for package in packages {
+            let dirs: Vec<PathBuf> = parse_field(&map, format!("includedirs_package.{}", package))?;
+            includedirs_package.insert(package.to_string(), dirs);
+        }
+
+        let targets = subkeys_of(&map, "includedirs_target");
+        let mut includedirs_target = HashMap::new();
+        for target in targets {
+            let dirs: Vec<PathBuf> = parse_field(&map, format!("includedirs_target.{}", target))?;
+            includedirs_target.insert(target.to_string(), dirs);
+        }
 
         Ok(BuildInfo {
             linkdirs: directories,
             links: links,
             use_cxx: use_cxx,
             use_stl: use_stl,
+            includedirs_package: includedirs_package,
+            includedirs_target: includedirs_target,
         })
     }
 }
@@ -406,7 +459,6 @@ impl Config {
 
         cmd.run_script("build.lua");
 
-
         if let Some(info) = self.get_build_info() {
             self.cache.build_info = info;
         }
@@ -515,7 +567,7 @@ impl Config {
     fn link(&mut self) {
         let dst = self.install();
         let plat = self.get_xmake_plat();
-        
+
         let build_info = &mut self.cache.build_info;
 
         for directory in build_info.linkdirs() {
@@ -693,8 +745,8 @@ impl Config {
             "windows" => {
                 let msvc_runtime = if static_crt { "MT" } else { "MD" };
                 Some(msvc_runtime.to_owned())
-            },
-            _ => None
+            }
+            _ => None,
         }
     }
 
@@ -927,7 +979,7 @@ impl CommaSeparated for &str {
 /// where the values are separated by the '|' character. Any empty values are
 /// filtered out.
 ///
-fn parse_info_pairs<T: AsRef<str>>(s: T) -> HashMap<String, Vec<String>> {
+fn parse_info_pairs<S: AsRef<str>>(s: S) -> HashMap<String, Vec<String>> {
     let str: String = s.as_ref().trim().to_string();
     let mut map: HashMap<String, Vec<String>> = HashMap::new();
 
@@ -945,6 +997,12 @@ fn parse_info_pairs<T: AsRef<str>>(s: T) -> HashMap<String, Vec<String>> {
     map
 }
 
+fn subkeys_of<S: AsRef<str>>(map: &HashMap<String, Vec<String>>, main_key: S) -> Vec<&str> {
+    let main_key = main_key.as_ref();
+    let prefix = format!("{main_key}.");
+    map.keys().filter_map(|k| k.strip_prefix(&prefix)).collect()
+}
+
 // This trait may be replaced by the unstable auto trait feature
 // References:
 // https://users.rust-lang.org/t/how-to-exclude-a-type-from-generic-trait-implementation/26156/9
@@ -958,7 +1016,10 @@ impl DirectParse for u32 {}
 impl DirectParse for String {}
 
 trait ParseField<T> {
-    fn parse_field(map: &HashMap<String, Vec<String>>, field: &str) -> Result<T, ParsingError>;
+    fn parse_field<S: AsRef<str>>(
+        map: &HashMap<String, Vec<String>>,
+        field: S,
+    ) -> Result<T, ParsingError>;
 }
 
 // Only implement for types that implement DirectParse
@@ -966,7 +1027,11 @@ impl<T> ParseField<T> for T
 where
     T: FromStr + DirectParse,
 {
-    fn parse_field(map: &HashMap<String, Vec<String>>, field: &str) -> Result<T, ParsingError> {
+    fn parse_field<S: AsRef<str>>(
+        map: &HashMap<String, Vec<String>>,
+        field: S,
+    ) -> Result<T, ParsingError> {
+        let field = field.as_ref();
         let values = map.get(field).ok_or(ParsingError::MissingKey)?;
         if values.len() > 1 {
             return Err(ParsingError::MultipleValues);
@@ -985,10 +1050,11 @@ impl<T> ParseField<Vec<T>> for Vec<T>
 where
     T: FromStr,
 {
-    fn parse_field(
+    fn parse_field<S: AsRef<str>>(
         map: &HashMap<String, Vec<String>>,
-        field: &str,
+        field: S,
     ) -> Result<Vec<T>, ParsingError> {
+        let field = field.as_ref();
         let values = map.get(field).ok_or(ParsingError::MissingKey)?;
         values
             .iter()
@@ -997,7 +1063,10 @@ where
     }
 }
 
-fn parse_field<T>(map: &HashMap<String, Vec<String>>, field: &str) -> Result<T, ParsingError>
+fn parse_field<T, S: AsRef<str>>(
+    map: &HashMap<String, Vec<String>>,
+    field: S,
+) -> Result<T, ParsingError>
 where
     T: ParseField<T>,
 {
@@ -1314,10 +1383,10 @@ mod path_clean {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
+    use std::{path::PathBuf, vec};
 
     use crate::{
-        parse_field, parse_info_pairs, BuildInfo, Link, LinkKind, ParsingError, XmakeCommand,
+        parse_field, parse_info_pairs, subkeys_of, BuildInfo, Link, LinkKind, ParsingError, Source,
     };
 
     #[test]
@@ -1339,10 +1408,17 @@ mod tests {
     #[test]
     fn parse_field_multiple_values() {
         let map = parse_info_pairs("key:value1|value2|value3");
-        let build_info: Result<String, _> = parse_field(&map, "key");
+        let result: Result<String, _> = parse_field(&map, "key");
         assert!(map.contains_key("key"));
-        assert!(build_info.is_err());
-        assert_eq!(build_info.err().unwrap(), ParsingError::MultipleValues);
+        assert!(result.is_err());
+        assert_eq!(result.err().unwrap(), ParsingError::MultipleValues);
+    }
+
+    #[test]
+    fn parse_with_subkeys() {
+        let map = parse_info_pairs("main:value\nmain.subkey:value1|value2|value3\nmain.sub2:vv");
+        let subkeys = subkeys_of(&map, "main");
+        assert_eq!(subkeys, vec!["sub2", "subkey"]);
     }
 
     #[test]
@@ -1391,6 +1467,25 @@ mod tests {
         let expected_directories = ["path/to/libA", "path/to/libB", "path\\to\\libC"]
             .map(PathBuf::from)
             .to_vec();
+        let expected_includedirs_package_a = ["includedir/a", "includedir\\aa"]
+            .map(PathBuf::from)
+            .to_vec();
+        let expected_includedirs_package_b = ["includedir/bb", "includedir\\b"]
+            .map(PathBuf::from)
+            .to_vec();
+
+        let expected_includedirs_target_c = ["includedir/c"].map(PathBuf::from).to_vec();
+
+        let expected_includedirs_both_greedy = [
+            "includedir/c",
+            "includedir/bb",
+            "includedir\\b",
+            "includedir/a",
+            "includedir\\aa",
+        ]
+        .map(PathBuf::from)
+        .to_vec();
+
         let expected_cxx = true;
         let expected_stl = false;
 
@@ -1399,6 +1494,9 @@ mod tests {
         s.push_str("stl_used:false\n");
         s.push_str("links:linkA/static|linkB/shared\n");
         s.push_str("linkdirs:path/to/libA|path/to/libB|path\\to\\libC\n");
+        s.push_str("includedirs_package.a:includedir/a|includedir\\aa\n");
+        s.push_str("includedirs_package.b:includedir/bb|includedir\\b\n");
+        s.push_str("includedirs_target.c:includedir/c");
 
         let build_info: BuildInfo = s.parse().unwrap();
 
@@ -1406,5 +1504,22 @@ mod tests {
         assert_eq!(build_info.linkdirs(), &expected_directories);
         assert_eq!(build_info.use_cxx(), expected_cxx);
         assert_eq!(build_info.use_stl(), expected_stl);
+
+        assert_eq!(
+            build_info.includedirs(Source::Package, "a"),
+            expected_includedirs_package_a
+        );
+        assert_eq!(
+            build_info.includedirs(Source::Package, "b"),
+            expected_includedirs_package_b
+        );
+        assert_eq!(
+            build_info.includedirs(Source::Target, "c"),
+            expected_includedirs_target_c
+        );
+        assert_eq!(
+            build_info.includedirs(Source::Both, "*"),
+            expected_includedirs_both_greedy
+        );
     }
 }
