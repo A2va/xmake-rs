@@ -92,7 +92,7 @@ function _print_infos(infos)
     print("__xmakers_start__")
     for k, v in table.orderpairs(infos) do
         -- links are handled differently
-        if k == "links" then
+        if k == "links" then 
             v = table.imap(v, function(index, v)
                 return format("%s/%s", v.name, v.kind)
             end)
@@ -181,7 +181,7 @@ function _get_links(target)
     -- collects all phony targets (which may have dependencies or packages) but have no links to them.
     local phony_target = {}
     for _, dep in ipairs(target:orderdeps()) do
-        table.insert(phony_target, utils.get_namespace_target(dep) == "phony")
+        table.insert(phony_target, dep:kind() == "phony")
     end
     local is_phony_target = function(idx)
         return phony_target[idx]
@@ -227,11 +227,11 @@ function _get_links(target)
     return links
 end
 
-function _link_info(targets, opt)
+function _link_info(binary_target, opt)
     opt = opt or {}
 
     local xmake_rs = localcache.cache("xmake-rs")
-    local cache_key = utils.get_cache_key(targets)
+    local cache_key = binary_target:data("xmakers-cachekey")
 
     local in_cache = xmake_rs:get2("linkinfo", cache_key) ~= nil
     if (not opt.recheck) and in_cache then
@@ -242,7 +242,6 @@ function _link_info(targets, opt)
         return {links = links, linkdirs = linkdirs}
     end
 
-    local binary_target = utils.create_binary_target(targets)
     local links = _get_links(binary_target)
     local linkdirs = _get_linkdirs(binary_target, {runenvs = true})
     
@@ -373,6 +372,34 @@ function _stl_info(targets, opt)
     return {cxx_used = is_cxx_used, stl_used = is_stl_used}
 end
 
+function _includedirs_info(binary_target, opt)
+    -- sysincludedirs is used when querying includedirs for packages on a target 
+    local results, sources = binary_target:get_from("sysincludedirs", "dep::*")
+
+    local includedirs_by_source = {}
+
+    for idx, includedirs in ipairs(results) do
+        local source = sources[idx]:split("/")[2]
+        local source, package = table.unpack(source:split("::"))
+
+        if source == "package" then
+            includedirs_by_source["includedirs_package.".. package] = includedirs
+        end
+    end
+
+    local results, sources = binary_target:get_from("includedirs", "dep::*")
+
+    for idx, includedirs in ipairs(results) do
+        local source = sources[idx]
+        local source, target = table.unpack(source:split("::"))
+
+        if source == "dep" then
+            includedirs_by_source["includedirs_target." .. target] = includedirs
+        end
+    end
+    return includedirs_by_source
+end
+
 
 function main()
     -- load the config to get the correct options
@@ -384,8 +411,11 @@ function main()
     local recheck = _cache_invalidation()
     local targets, _ = utils.get_targets()
 
-    local infos = _link_info(targets, {recheck = recheck})
+    local binary_target = utils.create_binary_target(targets)
+
+    local infos = _link_info(binary_target, {recheck = recheck})
     table.join2(infos, _stl_info(targets, {recheck = recheck}))
+    table.join2(infos, _includedirs_info(binary_target))
 
     -- print(infos)
     _print_infos(infos)

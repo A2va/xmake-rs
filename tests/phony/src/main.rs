@@ -1,6 +1,6 @@
 extern crate libc;
 
-extern {
+extern "C" {
     fn foo() -> libc::c_int;
 }
 

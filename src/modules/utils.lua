@@ -207,8 +207,10 @@ function create_binary_target(targets)
 
     -- take the first target as the fake target
     local fake_target = targets[1]:clone()
-    local hashed_key =  hash.sha256(bytes(get_cache_key(targets)))
+    local cachekey = get_cache_key(targets)
+    local hashed_key =  hash.sha256(bytes(cachekey))
     fake_target:name_set("xmake-rs-" .. string.sub(hashed_key, 1, 8))
+    fake_target:data_set("xmakers-cachekey", cachekey)
     fake_target:set("kind", "binary")
 
     -- reset some info
