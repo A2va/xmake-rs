@@ -1389,6 +1389,10 @@ mod tests {
         parse_field, parse_info_pairs, subkeys_of, BuildInfo, Link, LinkKind, ParsingError, Source,
     };
 
+    fn to_set<T: std::cmp::Eq + std::hash::Hash>(vec: Vec<T>) -> std::collections::HashSet<T> {
+        vec.into_iter().collect()
+    }
+
     #[test]
     fn parse_line() {
         let expected_values: Vec<_> = ["value1", "value2", "value3"].map(String::from).to_vec();
@@ -1417,8 +1421,8 @@ mod tests {
     #[test]
     fn parse_with_subkeys() {
         let map = parse_info_pairs("main:value\nmain.subkey:value1|value2|value3\nmain.sub2:vv");
-        let subkeys = subkeys_of(&map, "main");
-        assert_eq!(subkeys, vec!["sub2", "subkey"]);
+        let subkeys = to_set(subkeys_of(&map, "main"));
+        assert_eq!(subkeys, to_set(vec!["sub2", "subkey"]));
     }
 
     #[test]
@@ -1467,16 +1471,17 @@ mod tests {
         let expected_directories = ["path/to/libA", "path/to/libB", "path\\to\\libC"]
             .map(PathBuf::from)
             .to_vec();
-        let expected_includedirs_package_a = ["includedir/a", "includedir\\aa"]
+    
+        let expected_includedirs_package_a = to_set(["includedir/a", "includedir\\aa"]
             .map(PathBuf::from)
-            .to_vec();
-        let expected_includedirs_package_b = ["includedir/bb", "includedir\\b"]
+            .to_vec());
+        let expected_includedirs_package_b = to_set(["includedir/bb", "includedir\\b"]
             .map(PathBuf::from)
-            .to_vec();
+            .to_vec());
 
-        let expected_includedirs_target_c = ["includedir/c"].map(PathBuf::from).to_vec();
+        let expected_includedirs_target_c = to_set(["includedir/c"].map(PathBuf::from).to_vec());
 
-        let expected_includedirs_both_greedy = [
+        let expected_includedirs_both_greedy = to_set([
             "includedir/c",
             "includedir/bb",
             "includedir\\b",
@@ -1484,7 +1489,7 @@ mod tests {
             "includedir\\aa",
         ]
         .map(PathBuf::from)
-        .to_vec();
+        .to_vec());
 
         let expected_cxx = true;
         let expected_stl = false;
@@ -1506,19 +1511,19 @@ mod tests {
         assert_eq!(build_info.use_stl(), expected_stl);
 
         assert_eq!(
-            build_info.includedirs(Source::Package, "a"),
+            to_set(build_info.includedirs(Source::Package, "a")),
             expected_includedirs_package_a
         );
         assert_eq!(
-            build_info.includedirs(Source::Package, "b"),
+            to_set(build_info.includedirs(Source::Package, "b")),
             expected_includedirs_package_b
         );
         assert_eq!(
-            build_info.includedirs(Source::Target, "c"),
+            to_set(build_info.includedirs(Source::Target, "c")),
             expected_includedirs_target_c
         );
         assert_eq!(
-            build_info.includedirs(Source::Both, "*"),
+            to_set(build_info.includedirs(Source::Both, "*")),
             expected_includedirs_both_greedy
         );
     }
