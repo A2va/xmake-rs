@@ -490,7 +490,7 @@ impl Config {
             .clone()
             .unwrap_or_else(|| PathBuf::from(getenv_unwrap("OUT_DIR")));
 
-        cmd.arg(format!("--buildir={}", dst.display()));
+        cmd.arg(format!("--builddir={}", dst.display()));
 
         // Cross compilation
         let host = getenv_unwrap("HOST");
