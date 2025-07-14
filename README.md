@@ -6,12 +6,12 @@ library.
 ```toml
 # Cargo.toml
 [build-dependencies]
-xmake = "0.3.2"
+xmake = "0.3.3"
 ```
 
 The XMake executable is assumed to be `xmake` unless the `XMAKE`
 environmental variable is set.
-There is some examples in the `tests` folder of the repo. 
+There is some examples in the `tests` folder of the repo.
 
 ## Difference from cmake-rs
 

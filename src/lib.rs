@@ -12,7 +12,7 @@
 //!
 //! ```toml
 //! [build-dependencies]
-//! xmake = "0.3.2"
+//! xmake = "0.3.3"
 //! ```
 //!
 //! ## Examples
@@ -1471,7 +1471,7 @@ mod tests {
         let expected_directories = ["path/to/libA", "path/to/libB", "path\\to\\libC"]
             .map(PathBuf::from)
             .to_vec();
-    
+
         let expected_includedirs_package_a = to_set(["includedir/a", "includedir\\aa"]
             .map(PathBuf::from)
             .to_vec());
