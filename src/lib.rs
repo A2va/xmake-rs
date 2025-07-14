@@ -12,7 +12,7 @@
 //!
 //! ```toml
 //! [build-dependencies]
-//! xmake = "0.3.2"
+//! xmake = "0.3.3"
 //! ```
 //!
 //! ## Examples
@@ -187,7 +187,7 @@ impl FromStr for LinkKind {
         match s {
             "static" => Ok(LinkKind::Static),
             "shared" => Ok(LinkKind::Dynamic),
-            "system" => Ok(LinkKind::System),
+            "system" | "syslinks" => Ok(LinkKind::System),
             "framework" => Ok(LinkKind::Framework),
             "unknown" => Ok(LinkKind::Unknown),
             _ => Err(ParsingError::InvalidKind),
@@ -1471,25 +1471,31 @@ mod tests {
         let expected_directories = ["path/to/libA", "path/to/libB", "path\\to\\libC"]
             .map(PathBuf::from)
             .to_vec();
-    
-        let expected_includedirs_package_a = to_set(["includedir/a", "includedir\\aa"]
-            .map(PathBuf::from)
-            .to_vec());
-        let expected_includedirs_package_b = to_set(["includedir/bb", "includedir\\b"]
-            .map(PathBuf::from)
-            .to_vec());
+
+        let expected_includedirs_package_a = to_set(
+            ["includedir/a", "includedir\\aa"]
+                .map(PathBuf::from)
+                .to_vec(),
+        );
+        let expected_includedirs_package_b = to_set(
+            ["includedir/bb", "includedir\\b"]
+                .map(PathBuf::from)
+                .to_vec(),
+        );
 
         let expected_includedirs_target_c = to_set(["includedir/c"].map(PathBuf::from).to_vec());
 
-        let expected_includedirs_both_greedy = to_set([
-            "includedir/c",
-            "includedir/bb",
-            "includedir\\b",
-            "includedir/a",
-            "includedir\\aa",
-        ]
-        .map(PathBuf::from)
-        .to_vec());
+        let expected_includedirs_both_greedy = to_set(
+            [
+                "includedir/c",
+                "includedir/bb",
+                "includedir\\b",
+                "includedir/a",
+                "includedir\\aa",
+            ]
+            .map(PathBuf::from)
+            .to_vec(),
+        );
 
         let expected_cxx = true;
         let expected_stl = false;
