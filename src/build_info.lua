@@ -119,12 +119,16 @@ function _get_linkdirs(target, opt)
     linkdirs = hashset.from(linkdirs)
     local envs = target:pkgenvs()
 
-    local values = ""
+    local values = nil
     if envs then
         values = is_plat("windows") and envs.PATH or envs.LD_LIBRARY_PATH
         if is_plat("macosx") then
             values = envs.DYLD_LIBRARY_PATH
         end
+    end
+
+    if not values then
+        return linkdirs:to_array()
     end
 
     for _, v in ipairs(path.splitenv(values)) do
