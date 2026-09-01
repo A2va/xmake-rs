@@ -1210,14 +1210,17 @@ impl XmakeCommand {
         for arg in &self.args {
             self.command.arg(arg);
         }
-        if cfg!(windows) {
+        #[cfg(windows)]
+        {
             use windows::Win32::System::Console::{GetConsoleOutputCP, SetConsoleOutputCP};
             let old_cp = unsafe { GetConsoleOutputCP() };
             unsafe {let _ = SetConsoleOutputCP(65001);}
             let ret = run(&mut self.command, "xmake", self.raw_output);
             unsafe { let _ = SetConsoleOutputCP(old_cp); }
             ret
-        }else{
+        }
+        #[cfg(not(windows))]
+        {
             run(&mut self.command, "xmake", self.raw_output)
         }
     }
