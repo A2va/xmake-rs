@@ -1210,7 +1210,16 @@ impl XmakeCommand {
         for arg in &self.args {
             self.command.arg(arg);
         }
-        run(&mut self.command, "xmake", self.raw_output)
+        if cfg!(windows) {
+            use windows::Win32::System::Console::{GetConsoleOutputCP, SetConsoleOutputCP};
+            let old_cp = unsafe { GetConsoleOutputCP() };
+            unsafe {let _ = SetConsoleOutputCP(65001);}
+            let ret = run(&mut self.command, "xmake", self.raw_output);
+            unsafe { let _ = SetConsoleOutputCP(old_cp); }
+            ret
+        }else{
+            run(&mut self.command, "xmake", self.raw_output)
+        }
     }
 
     /// Execute a lua script, located in the src folder of this crate.
@@ -1225,16 +1234,7 @@ impl XmakeCommand {
         // Script to execute are positional argument so always last
         self.args.push(script_file.into());
         self.task("lua"); // For the task to be lua
-        if cfg!(windows) {
-            use windows::Win32::System::Console::{GetConsoleOutputCP, SetConsoleOutputCP};
-            let old_cp = unsafe { GetConsoleOutputCP() };
-            unsafe {let _ = SetConsoleOutputCP(65001);}
-            let ret = self.run();
-            unsafe { let _ = SetConsoleOutputCP(old_cp); }
-            ret
-        } else {
-            self.run()
-        }
+        self.run()
     }
 }
 
