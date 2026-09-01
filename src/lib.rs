@@ -592,24 +592,32 @@ impl Config {
         build_info.linkdirs.push(dst.join("bin"));
 
         let mut shared_libs = HashSet::new();
-
         for link in build_info.links() {
+            let raw_name = link.name();
+            // xmake passes some libraries with the .lib extension
+            // see https://github.com/xmake-io/xmake/issues/7708
+            let link_name =
+                if plat == "windows" && raw_name.ends_with(".lib") {
+                    &raw_name[..raw_name.len() - 4]
+                } else {
+                    raw_name
+                };
             match link.kind() {
-                LinkKind::Static => println!("cargo:rustc-link-lib=static={}", link.name()),
+                LinkKind::Static => println!("cargo:rustc-link-lib=static={}", link_name),
                 LinkKind::Dynamic => {
-                    println!("cargo:rustc-link-lib=dylib={}", link.name());
-                    shared_libs.insert(link.name());
+                    println!("cargo:rustc-link-lib=dylib={}", link_name);
+                    shared_libs.insert(link_name);
                 }
                 LinkKind::Framework if plat == "macosx" => {
-                    println!("cargo:rustc-link-lib=framework={}", link.name())
+                    println!("cargo:rustc-link-lib=framework={}", link_name)
                 }
                 // For rust, framework type is only for macosx but can be used on multiple system in xmake
                 // so fallback to the system libraries case
                 LinkKind::System | LinkKind::Framework => {
-                    println!("cargo:rustc-link-lib={}", link.name())
+                    println!("cargo:rustc-link-lib={}", link_name)
                 }
                 // Let try cargo handle the rest
-                LinkKind::Unknown => println!("cargo:rustc-link-lib={}", link.name()),
+                LinkKind::Unknown => println!("cargo:rustc-link-lib={}", link_name),
             }
         }
 
@@ -1202,7 +1210,19 @@ impl XmakeCommand {
         for arg in &self.args {
             self.command.arg(arg);
         }
-        run(&mut self.command, "xmake", self.raw_output)
+        #[cfg(windows)]
+        {
+            use windows::Win32::System::Console::{GetConsoleOutputCP, SetConsoleOutputCP};
+            let old_cp = unsafe { GetConsoleOutputCP() };
+            unsafe {let _ = SetConsoleOutputCP(65001);}
+            let ret = run(&mut self.command, "xmake", self.raw_output);
+            unsafe { let _ = SetConsoleOutputCP(old_cp); }
+            ret
+        }
+        #[cfg(not(windows))]
+        {
+            run(&mut self.command, "xmake", self.raw_output)
+        }
     }
 
     /// Execute a lua script, located in the src folder of this crate.
@@ -1217,7 +1237,6 @@ impl XmakeCommand {
         // Script to execute are positional argument so always last
         self.args.push(script_file.into());
         self.task("lua"); // For the task to be lua
-
         self.run()
     }
 }
