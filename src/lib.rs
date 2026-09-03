@@ -1170,7 +1170,7 @@ impl XmakeCommand {
     /// - All command output is captured and returned
     ///
     /// When disabled (false, default):
-    /// - Only captures output between special markers (`__xmakers_start__` and `__xmakers_end__`)
+    /// - Only captures output between special markers (`__xmakers_start__` and `__xmakers_stop__`)
     /// - Filters out diagnostic and setup information
     ///
     /// This setting is passed to the [`run`] function to control output processing.
@@ -1244,6 +1244,16 @@ impl XmakeCommand {
     }
 }
 
+#[inline(always)]
+fn push_marked_line(output: &mut String, line: &str, take_output: &mut bool, raw_output: bool) {
+    *take_output &= !line.starts_with("__xmakers_stop__");
+    if *take_output || raw_output {
+        output.push_str(line);
+        output.push('\n');
+    }
+    *take_output |= line.starts_with("__xmakers_start__");
+}
+
 fn run(cmd: &mut Command, program: &str, raw_output: bool) -> Option<String> {
     println!("running: {:?}", cmd);
     let mut child = match cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn() {
@@ -1268,12 +1278,7 @@ fn run(cmd: &mut Command, program: &str, raw_output: bool) -> Option<String> {
                 // Print stdout for logging
                 println!("{}", line);
 
-                take_output &= !line.starts_with("__xmakers_start__");
-                if take_output || raw_output {
-                    output.push_str(line.as_str());
-                    output.push('\n');
-                }
-                take_output |= line.starts_with("__xmakers_start__");
+                push_marked_line(&mut output, &line, &mut take_output, raw_output);
             }
         }
     }
@@ -1408,7 +1413,8 @@ mod tests {
     use std::{path::PathBuf, vec};
 
     use crate::{
-        parse_field, parse_info_pairs, subkeys_of, BuildInfo, Link, LinkKind, ParsingError, Source,
+        parse_field, parse_info_pairs, push_marked_line, subkeys_of, BuildInfo, Link, LinkKind,
+        ParsingError, Source,
     };
 
     fn to_set<T: std::cmp::Eq + std::hash::Hash>(vec: Vec<T>) -> std::collections::HashSet<T> {
@@ -1554,5 +1560,23 @@ mod tests {
             to_set(build_info.includedirs(Source::Both, "*")),
             expected_includedirs_both_greedy
         );
+    }
+
+    #[test]
+    fn marked_output_stops_at_stop_marker() {
+        let lines = [
+            "noise before",
+            "__xmakers_start__",
+            "links:foo/static",
+            "__xmakers_stop__",
+            "noise after",
+        ];
+        let mut output = String::new();
+        let mut take = false;
+        for line in lines {
+            push_marked_line(&mut output, line, &mut take, false);
+        }
+        assert_eq!(output, "links:foo/static\n");
+        assert!(!take);
     }
 }
