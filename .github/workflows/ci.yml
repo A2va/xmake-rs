@@ -1,11 +1,11 @@
 name: Tests Suite
 
 on:
-  workflow_dispatch: 
+  workflow_dispatch:
   pull_request:
-    branches: [ main ]
+    branches: [main]
   push:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   test:
@@ -31,7 +31,7 @@ jobs:
             rust_target: x86_64-pc-windows-msvc
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v7
 
       - name: Setup xmake
         uses: xmake-io/github-action-setup-xmake@v1
@@ -52,7 +52,7 @@ jobs:
         run: |
           cargo test --package xmake
           cargo test --doc
-        
+
       - name: Find and run test binaries
         shell: bash
         run: |
