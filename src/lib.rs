@@ -596,12 +596,11 @@ impl Config {
             let raw_name = link.name();
             // xmake passes some libraries with the .lib extension
             // see https://github.com/xmake-io/xmake/issues/7708
-            let link_name =
-                if plat == "windows" && raw_name.ends_with(".lib") {
-                    &raw_name[..raw_name.len() - 4]
-                } else {
-                    raw_name
-                };
+            let link_name = if plat == "windows" && raw_name.ends_with(".lib") {
+                &raw_name[..raw_name.len() - 4]
+            } else {
+                raw_name
+            };
             match link.kind() {
                 LinkKind::Static => println!("cargo:rustc-link-lib=static={}", link_name),
                 LinkKind::Dynamic => {
@@ -1214,9 +1213,13 @@ impl XmakeCommand {
         {
             use windows::Win32::System::Console::{GetConsoleOutputCP, SetConsoleOutputCP};
             let old_cp = unsafe { GetConsoleOutputCP() };
-            unsafe {let _ = SetConsoleOutputCP(65001);}
+            unsafe {
+                let _ = SetConsoleOutputCP(65001);
+            }
             let ret = run(&mut self.command, "xmake", self.raw_output);
-            unsafe { let _ = SetConsoleOutputCP(old_cp); }
+            unsafe {
+                let _ = SetConsoleOutputCP(old_cp);
+            }
             ret
         }
         #[cfg(not(windows))]
