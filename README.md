@@ -6,7 +6,7 @@ library.
 ```toml
 # Cargo.toml
 [build-dependencies]
-xmake = "0.3.3"
+xmake = "0.3.4"
 ```
 
 The XMake executable is assumed to be `xmake` unless the `XMAKE`
