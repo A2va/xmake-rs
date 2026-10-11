@@ -17,7 +17,7 @@
     #define FOO_PUBLIC_API FOO_DLL_IMPORT
 #endif
 
-FOO_PUBLIC_API int add();
+FOO_PUBLIC_API int add(int a, int b);
 
 int add(int a, int b) {
     return a + b;
